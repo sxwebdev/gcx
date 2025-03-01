@@ -12,12 +12,12 @@
 
 ## Installation
 
-You can download the pre-built binary from the [releases](#) page or build it from source:
+You can download the pre-built binary from the [releases](https://github.com/sxwebdev/gcx/releases) page or build it from source:
 
 ```bash
 git clone https://github.com/sxwebdev/gcx.git
 cd gcx
-go build -ldflags "-X main.version=$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0)" -o gcx .
+go build -ldflags "-X main.version=$(git describe --tags --abbrev=0)" -o gcx .
 ```
 
 Alternatively, you can use the Docker image available on Docker Hub:
@@ -31,7 +31,9 @@ docker pull sxwebdev/gcx:latest
 Create a YAML configuration file named `.gcx.yaml` in your project root. An example configuration:
 
 ```yaml
-version: 2
+version: 1
+
+out_dir: dist
 
 before:
   hooks:
@@ -64,6 +66,7 @@ blobs:
 
 ### Template Variables
 
+- **out_dir:** Sets the output directory for build artifacts (default is `dist`).
 - **Version:** Automatically set from the current Git tag. If no tag is found, defaults to `0.0.0` (with a log message).
 - **ProjectID:** If the `PROJECT_ID` environment variable is not set, the tool uses the name of the current working directory.
 
