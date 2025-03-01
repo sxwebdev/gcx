@@ -13,12 +13,16 @@ RUN go mod download
 
 # Copy the source code and compile the gcx binary using ldflags.
 COPY . .
-RUN go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" -o gcx ./cmd/gcx
+RUN CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" -v -o ./bin/gcx ./cmd/gcx
 
 # Final image based on Alpine with necessary packages.
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates git
-WORKDIR /root/
-COPY --from=builder /app/gcx .
+FROM golang:1.24-alpine
 
-ENTRYPOINT ["/root/gcx"]
+ENV GOTOOLCHAIN=auto
+ENV GOROOT=/usr/local/go
+
+RUN apk --no-cache add ca-certificates git gcc musl-dev mercurial
+WORKDIR /app
+COPY --from=builder /app/bin/gcx /usr/bin/
+
+CMD ["gcx"]

@@ -29,6 +29,7 @@ var (
 // Config represents the configuration file structure (similar to GoReleaser configuration).
 type Config struct {
 	Version  int             `yaml:"version"`
+	OutDir   string          `yaml:"out_dir"` // Optional output directory; default is "dist"
 	Before   BeforeConfig    `yaml:"before"`
 	Builds   []BuildConfig   `yaml:"builds"`
 	Archives []ArchiveConfig `yaml:"archives"`
@@ -119,8 +120,13 @@ func buildBinaries(cfg *Config) error {
 		}
 	}
 
+	// Determine the output directory (default is "dist")
+	outDir := cfg.OutDir
+	if outDir == "" {
+		outDir = "dist"
+	}
+
 	// Create the build directory
-	outDir := "dist"
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
@@ -134,7 +140,11 @@ func buildBinaries(cfg *Config) error {
 		// Iterate over all combinations of GOOS and GOARCH
 		for _, goos := range buildCfg.Goos {
 			for _, goarch := range buildCfg.Goarch {
-				// If the architecture is arm and goarm parameters are provided, iterate over them
+				// If the architecture is arm and OS is not linux, skip build
+				if goarch == "arm" && goos != "linux" {
+					continue
+				}
+				// If architecture is arm and goarm parameters are provided, iterate over them
 				if goarch == "arm" && len(buildCfg.Goarm) > 0 {
 					for _, goarm := range buildCfg.Goarm {
 						envs := os.Environ()
@@ -182,9 +192,13 @@ func buildBinaries(cfg *Config) error {
 	return nil
 }
 
-// publishArtifacts uploads artifacts (from the "dist" directory) to S3 according to the configuration.
+// publishArtifacts uploads artifacts (from the output directory) to S3 according to the configuration.
 func publishArtifacts(cfg *Config) error {
-	artifactsDir := "dist"
+	// Determine the artifacts directory (default is "dist")
+	artifactsDir := cfg.OutDir
+	if artifactsDir == "" {
+		artifactsDir = "dist"
+	}
 
 	// Read AWS credentials from environment variables
 	accessKey := os.Getenv("AWS_ACCESS_KEY_ID")
