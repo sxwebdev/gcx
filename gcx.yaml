@@ -64,9 +64,9 @@ deploys:
     alerts:
       urls:
         # Main Telegram channel for the team
-        - "telegram://123456789:AABBCCDDEEFFaabbccddee@telegram?channels=myapp-alerts"
+        - "telegram://chatID:token@telegram?channels=myapp-alerts"
         # Backup Slack channel
-        - "slack://xoxb-123456789012-1234567890123-abcdefghijklmnopqrstuvwx/general"
+        - "slack://token/general"
         # Discord notifications for monitoring
         - "discord://123456789012345678/abcdefghijklmnopqrstuvwxyz1234567890"
         # Microsoft Teams channel
@@ -86,6 +86,6 @@ deploys:
     alerts:
       urls:
         # Telegram channel for test environment
-        - "telegram://123456789:AABBCCDDEEFFaabbccddee@telegram?channels=myapp-staging"
+        - "telegram://123456789:token@telegram?channels=myapp-staging"
         # Webhook for external monitoring system integration
         - "generic://monitoring.example.com/webhook?token=your-token-here"
