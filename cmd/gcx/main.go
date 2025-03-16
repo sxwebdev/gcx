@@ -15,6 +15,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/containrrr/shoutrrr"
 	"github.com/joho/godotenv"
 	"github.com/melbahja/goph"
 	"github.com/minio/minio-go/v7"
@@ -39,6 +40,7 @@ type Config struct {
 	Builds   []BuildConfig   `yaml:"builds"`
 	Archives []ArchiveConfig `yaml:"archives"`
 	Blobs    []BlobConfig    `yaml:"blobs"`
+	Deploys  []DeployConfig  `yaml:"deploys"`
 }
 
 type HooksConfig struct {
@@ -60,7 +62,7 @@ type ArchiveConfig struct {
 	NameTemplate string   `yaml:"name_template"`
 }
 
-// ArchiveTemplateData содержит данные для шаблона имени архива
+// ArchiveTemplateData contains data for archive name template
 type ArchiveTemplateData struct {
 	Binary  string
 	Version string
@@ -80,6 +82,31 @@ type BlobConfig struct {
 	KeyPath string `yaml:"key_path,omitempty"`
 	// Common fields
 	Directory string `yaml:"directory"`
+}
+
+type DeployConfig struct {
+	Name     string `yaml:"name"`
+	Provider string `yaml:"provider"`
+	// SSH config fields
+	Server   string   `yaml:"server,omitempty"`
+	User     string   `yaml:"user,omitempty"`
+	KeyPath  string   `yaml:"key_path,omitempty"`
+	Commands []string `yaml:"commands"`
+	// Alert configuration
+	Alerts AlertConfig `yaml:"alerts"`
+}
+
+// AlertConfig contains notification settings
+type AlertConfig struct {
+	URLs []string `yaml:"urls"` // URLs in shoutrrr format
+}
+
+// AlertTemplateData contains data for message template
+type AlertTemplateData struct {
+	AppName string
+	Version string
+	Status  string
+	Error   string
 }
 
 // ToS3Config converts BlobConfig to S3Config if provider is s3
@@ -108,6 +135,20 @@ func (c *BlobConfig) ToSSHConfig() *SSHConfig {
 	}
 }
 
+// ToSSHDeployConfig converts DeployConfig to SSHDeployConfig if provider is ssh
+func (c *DeployConfig) ToSSHDeployConfig() *SSHDeployConfig {
+	if c.Provider != "ssh" {
+		return nil
+	}
+	return &SSHDeployConfig{
+		Name:     c.Name,
+		Server:   c.Server,
+		User:     c.User,
+		KeyPath:  c.KeyPath,
+		Commands: c.Commands,
+	}
+}
+
 // Internal config types for type safety
 type S3Config struct {
 	Bucket    string
@@ -123,15 +164,24 @@ type SSHConfig struct {
 	Directory string
 }
 
+// Internal config types for type safety
+type SSHDeployConfig struct {
+	Name     string
+	Server   string
+	User     string
+	KeyPath  string
+	Commands []string
+}
+
 // loadConfig reads the YAML configuration from the specified file.
 func loadConfig(configPath string) (*Config, error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error loading configuration: %w", err)
 	}
 	var cfg Config
 	if err = yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error parsing configuration: %w", err)
 	}
 	return &cfg, nil
 }
@@ -148,7 +198,7 @@ func runHooks(hooks []string) error {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("error executing hook '%s': %v", hook, err)
+			return fmt.Errorf("error executing hook '%s': %w", hook, err)
 		}
 	}
 	return nil
@@ -188,7 +238,7 @@ func buildBinaries(cfg *Config) error {
 
 	// Create the build directory
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return err
+		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	// For each build configuration
@@ -223,7 +273,7 @@ func buildBinaries(cfg *Config) error {
 						cmd.Stdout = os.Stdout
 						cmd.Stderr = os.Stderr
 						if err := cmd.Run(); err != nil {
-							return fmt.Errorf("build error: %v", err)
+							return fmt.Errorf("build error: %w", err)
 						}
 					}
 				} else {
@@ -243,7 +293,7 @@ func buildBinaries(cfg *Config) error {
 					cmd.Stdout = os.Stdout
 					cmd.Stderr = os.Stderr
 					if err := cmd.Run(); err != nil {
-						return fmt.Errorf("build error: %v", err)
+						return fmt.Errorf("build error: %w", err)
 					}
 				}
 			}
@@ -252,7 +302,7 @@ func buildBinaries(cfg *Config) error {
 
 	// Create archives after successful build
 	if err := createArchives(cfg, outDir); err != nil {
-		return fmt.Errorf("failed to create archives: %v", err)
+		return fmt.Errorf("failed to create archives: %w", err)
 	}
 
 	// Execute after hooks
@@ -265,7 +315,7 @@ func buildBinaries(cfg *Config) error {
 	return nil
 }
 
-// publishArtifacts uploads artifacts (from the output directory) to S3 according to the configuration.
+// publishArtifacts uploads artifacts to configured destinations
 func publishArtifacts(cfg *Config) error {
 	// Determine the artifacts directory (default is "dist")
 	artifactsDir := cfg.OutDir
@@ -298,11 +348,11 @@ func publishArtifacts(cfg *Config) error {
 		switch blob.Provider {
 		case "s3":
 			if err := publishToS3(blob.ToS3Config(), artifactsDir, tmplData); err != nil {
-				return fmt.Errorf("s3 publish error: %v", err)
+				return fmt.Errorf("s3 publish error: %w", err)
 			}
 		case "ssh":
 			if err := publishToSSH(blob.ToSSHConfig(), artifactsDir, tmplData); err != nil {
-				return fmt.Errorf("ssh publish error: %v", err)
+				return fmt.Errorf("ssh publish error: %w", err)
 			}
 		default:
 			log.Printf("Skipping unknown provider: %s", blob.Provider)
@@ -327,18 +377,18 @@ func publishToS3(cfg *S3Config, artifactsDir string, tmplData map[string]string)
 	// Process template for the publish directory
 	tmpl, err := template.New("directory").Parse(cfg.Directory)
 	if err != nil {
-		return fmt.Errorf("error parsing directory template: %v", err)
+		return fmt.Errorf("error parsing directory template: %w", err)
 	}
 	var dirBuffer strings.Builder
 	if err = tmpl.Execute(&dirBuffer, tmplData); err != nil {
-		return fmt.Errorf("error executing directory template: %v", err)
+		return fmt.Errorf("error executing directory template: %w", err)
 	}
 	remoteDir := dirBuffer.String()
 
 	// Parse endpoint to extract host
 	urlData, err := url.Parse(cfg.Endpoint)
 	if err != nil {
-		return fmt.Errorf("error parsing endpoint: %v", err)
+		return fmt.Errorf("error parsing endpoint: %w", err)
 	}
 
 	// Create an S3 client using minio-go
@@ -348,26 +398,26 @@ func publishToS3(cfg *S3Config, artifactsDir string, tmplData map[string]string)
 		Region: cfg.Region,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create S3 client: %v", err)
+		return fmt.Errorf("failed to create S3 client: %w", err)
 	}
 
 	// Check if the bucket exists and create it if necessary
 	ctx := context.Background()
 	exists, err := s3Client.BucketExists(ctx, cfg.Bucket)
 	if err != nil {
-		return fmt.Errorf("bucket check error: %v", err)
+		return fmt.Errorf("bucket check error: %w", err)
 	}
 	if !exists {
 		log.Printf("Bucket %s does not exist, creating...", cfg.Bucket)
 		if err = s3Client.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{Region: cfg.Region}); err != nil {
-			return fmt.Errorf("failed to create bucket: %v", err)
+			return fmt.Errorf("failed to create bucket: %w", err)
 		}
 	}
 
 	// Upload all files from the artifacts directory
 	files, err := os.ReadDir(artifactsDir)
 	if err != nil {
-		return fmt.Errorf("failed to read directory %s: %v", artifactsDir, err)
+		return fmt.Errorf("failed to read directory %s: %w", artifactsDir, err)
 	}
 	for _, file := range files {
 		if file.IsDir() {
@@ -378,17 +428,17 @@ func publishToS3(cfg *S3Config, artifactsDir string, tmplData map[string]string)
 		log.Printf("Uploading %s to s3://%s/%s", localFilePath, cfg.Bucket, remotePath)
 		f, err := os.Open(localFilePath)
 		if err != nil {
-			return fmt.Errorf("failed to open file %s: %v", localFilePath, err)
+			return fmt.Errorf("failed to open file %s: %w", localFilePath, err)
 		}
 		stat, err := f.Stat()
 		if err != nil {
 			f.Close()
-			return fmt.Errorf("failed to get file info for %s: %v", localFilePath, err)
+			return fmt.Errorf("failed to get file info for %s: %w", localFilePath, err)
 		}
 		_, err = s3Client.PutObject(ctx, cfg.Bucket, remotePath, f, stat.Size(), minio.PutObjectOptions{})
 		f.Close()
 		if err != nil {
-			return fmt.Errorf("failed to upload file %s: %v", localFilePath, err)
+			return fmt.Errorf("failed to upload file %s: %w", localFilePath, err)
 		}
 	}
 	return nil
@@ -403,35 +453,35 @@ func publishToSSH(cfg *SSHConfig, artifactsDir string, tmplData map[string]strin
 	// Process template for the publish directory
 	tmpl, err := template.New("directory").Parse(cfg.Directory)
 	if err != nil {
-		return fmt.Errorf("error parsing directory template: %v", err)
+		return fmt.Errorf("error parsing directory template: %w", err)
 	}
 	var dirBuffer strings.Builder
 	if err = tmpl.Execute(&dirBuffer, tmplData); err != nil {
-		return fmt.Errorf("error executing directory template: %v", err)
+		return fmt.Errorf("error executing directory template: %w", err)
 	}
 	remoteDir := dirBuffer.String()
 
 	// Create SSH client
 	auth, err := goph.Key(cfg.KeyPath, "")
 	if err != nil {
-		return fmt.Errorf("failed to load SSH key: %v", err)
+		return fmt.Errorf("failed to load SSH key: %w", err)
 	}
 
 	client, err := goph.New(cfg.User, cfg.Server, auth)
 	if err != nil {
-		return fmt.Errorf("failed to create SSH client: %v", err)
+		return fmt.Errorf("failed to create SSH client: %w", err)
 	}
 	defer client.Close()
 
 	// Create remote directory if it doesn't exist
 	if _, err := client.Run(fmt.Sprintf("mkdir -p %s", remoteDir)); err != nil {
-		return fmt.Errorf("failed to create remote directory: %v", err)
+		return fmt.Errorf("failed to create remote directory: %w", err)
 	}
 
 	// Upload all files from the artifacts directory
 	files, err := os.ReadDir(artifactsDir)
 	if err != nil {
-		return fmt.Errorf("failed to read directory %s: %v", artifactsDir, err)
+		return fmt.Errorf("failed to read directory %s: %w", artifactsDir, err)
 	}
 
 	for _, file := range files {
@@ -443,35 +493,35 @@ func publishToSSH(cfg *SSHConfig, artifactsDir string, tmplData map[string]strin
 		log.Printf("Uploading %s to %s:%s", localFilePath, cfg.Server, remotePath)
 
 		if err := client.Upload(localFilePath, remotePath); err != nil {
-			return fmt.Errorf("failed to upload file %s: %v", localFilePath, err)
+			return fmt.Errorf("failed to upload file %s: %w", localFilePath, err)
 		}
 	}
 
 	return nil
 }
 
-// createArchives создает архивы для всех собранных бинарных файлов
+// createArchives creates archives for all built binaries
 func createArchives(cfg *Config, artifactsDir string) error {
 	if len(cfg.Archives) == 0 {
 		return nil
 	}
 
-	// Получаем текущую версию
+	// Get current version
 	version := getGitTag()
 
-	// Читаем все файлы в директории артефактов
+	// Read all files in artifacts directory
 	files, err := os.ReadDir(artifactsDir)
 	if err != nil {
-		return fmt.Errorf("failed to read artifacts directory: %v", err)
+		return fmt.Errorf("failed to read artifacts directory: %w", err)
 	}
 
-	// Для каждого файла создаем архивы согласно конфигурации
+	// Create archives for each file according to configuration
 	for _, file := range files {
 		if file.IsDir() {
 			continue
 		}
 
-		// Парсим имя файла для получения информации о платформе
+		// Parse filename to get platform information
 		fileName := file.Name()
 		parts := strings.Split(fileName, "_")
 		if len(parts) < 3 {
@@ -482,7 +532,7 @@ func createArchives(cfg *Config, artifactsDir string) error {
 		os := parts[1]
 		arch := parts[2]
 
-		// Данные для шаблона
+		// Template data
 		tmplData := ArchiveTemplateData{
 			Binary:  binary,
 			Version: version,
@@ -490,20 +540,20 @@ func createArchives(cfg *Config, artifactsDir string) error {
 			Arch:    arch,
 		}
 
-		// Для каждой конфигурации архива
+		// For each archive configuration
 		for _, archive := range cfg.Archives {
-			// Создаем имя архива из шаблона
+			// Create archive name from template
 			tmpl, err := template.New("archive").Parse(archive.NameTemplate)
 			if err != nil {
-				return fmt.Errorf("failed to parse archive name template: %v", err)
+				return fmt.Errorf("failed to parse archive name template: %w", err)
 			}
 
 			var nameBuffer strings.Builder
 			if err := tmpl.Execute(&nameBuffer, tmplData); err != nil {
-				return fmt.Errorf("failed to execute archive name template: %v", err)
+				return fmt.Errorf("failed to execute archive name template: %w", err)
 			}
 
-			// Для каждого формата архива
+			// For each archive format
 			for _, format := range archive.Formats {
 				archiveName := nameBuffer.String() + "." + format
 				archivePath := filepath.Join(artifactsDir, archiveName)
@@ -511,9 +561,9 @@ func createArchives(cfg *Config, artifactsDir string) error {
 				switch format {
 				case "tar.gz":
 					if err := createTarGz(filepath.Join(artifactsDir, fileName), archivePath); err != nil {
-						return fmt.Errorf("failed to create tar.gz archive: %v", err)
+						return fmt.Errorf("failed to create tar.gz archive: %w", err)
 					}
-				// Здесь можно добавить поддержку других форматов архивов
+				// Here you can add support for other archive formats
 				default:
 					log.Printf("Unsupported archive format: %s", format)
 				}
@@ -524,37 +574,37 @@ func createArchives(cfg *Config, artifactsDir string) error {
 	return nil
 }
 
-// createTarGz создает tar.gz архив из файла
+// createTarGz creates a tar.gz archive from a file
 func createTarGz(srcFile, destFile string) error {
-	// Создаем файл архива
+	// Create archive file
 	archive, err := os.Create(destFile)
 	if err != nil {
-		return fmt.Errorf("failed to create archive file: %v", err)
+		return fmt.Errorf("failed to create archive file: %w", err)
 	}
 	defer archive.Close()
 
-	// Создаем gzip writer
+	// Create gzip writer
 	gw := gzip.NewWriter(archive)
 	defer gw.Close()
 
-	// Создаем tar writer
+	// Create tar writer
 	tw := tar.NewWriter(gw)
 	defer tw.Close()
 
-	// Открываем исходный файл
+	// Open source file
 	file, err := os.Open(srcFile)
 	if err != nil {
-		return fmt.Errorf("failed to open source file: %v", err)
+		return fmt.Errorf("failed to open source file: %w", err)
 	}
 	defer file.Close()
 
-	// Получаем информацию о файле
+	// Get file info
 	stat, err := file.Stat()
 	if err != nil {
-		return fmt.Errorf("failed to get file info: %v", err)
+		return fmt.Errorf("failed to get file info: %w", err)
 	}
 
-	// Создаем заголовок tar
+	// Create tar header
 	header := &tar.Header{
 		Name:    filepath.Base(srcFile),
 		Size:    stat.Size(),
@@ -562,14 +612,155 @@ func createTarGz(srcFile, destFile string) error {
 		ModTime: stat.ModTime(),
 	}
 
-	// Записываем заголовок
+	// Write header
 	if err := tw.WriteHeader(header); err != nil {
-		return fmt.Errorf("failed to write tar header: %v", err)
+		return fmt.Errorf("failed to write tar header: %w", err)
 	}
 
-	// Копируем содержимое файла в архив
+	// Copy file contents to archive
 	if _, err := io.Copy(tw, file); err != nil {
-		return fmt.Errorf("failed to write file to tar: %v", err)
+		return fmt.Errorf("failed to write file to tar: %w", err)
+	}
+
+	return nil
+}
+
+// deployArtifacts executes deployment according to the configuration
+func deployArtifacts(cfg *Config, deployName string) error {
+	if len(cfg.Deploys) == 0 {
+		return fmt.Errorf("no deploy configurations found")
+	}
+
+	// If deployName is specified, execute only that deploy
+	if deployName != "" {
+		for _, deploy := range cfg.Deploys {
+			if deploy.Name == deployName {
+				return executeDeploy(&deploy)
+			}
+		}
+		return fmt.Errorf("deploy configuration '%s' not found", deployName)
+	}
+
+	// Execute all deploys
+	for _, deploy := range cfg.Deploys {
+		if err := executeDeploy(&deploy); err != nil {
+			return fmt.Errorf("deploy '%s' failed: %w", deploy.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// sendAlert sends notification through shoutrrr
+func sendAlert(urls []string, tmplData AlertTemplateData) error {
+	if len(urls) == 0 {
+		return nil
+	}
+
+	// Create message template
+	const msgTemplate = `
+Deployment Status Update
+Application: {{.AppName}}
+Version: {{.Version}}
+Status: {{.Status}}
+{{if .Error}}Error: {{.Error}}{{end}}
+`
+
+	tmpl, err := template.New("alert").Parse(msgTemplate)
+	if err != nil {
+		return fmt.Errorf("failed to parse alert template: %w", err)
+	}
+
+	var msgBuffer strings.Builder
+	if err := tmpl.Execute(&msgBuffer, tmplData); err != nil {
+		return fmt.Errorf("failed to execute alert template: %w", err)
+	}
+
+	// Create sender for all URLs
+	sender, err := shoutrrr.CreateSender(urls...)
+	if err != nil {
+		return fmt.Errorf("failed to create alert sender: %w", err)
+	}
+
+	// Send notification
+	errs := sender.Send(msgBuffer.String(), nil)
+	if len(errs) > 0 {
+		for _, err := range errs {
+			log.Printf("failed to send alert: %v", err)
+		}
+		return fmt.Errorf("failed to send alerts")
+	}
+
+	return nil
+}
+
+// executeDeploy executes a single deployment configuration
+func executeDeploy(deploy *DeployConfig) error {
+	log.Printf("Executing deploy: %s", deploy.Name)
+
+	// Get current version for notifications
+	version := getGitTag()
+
+	// Prepare notification data
+	alertData := AlertTemplateData{
+		AppName: deploy.Name,
+		Version: version,
+	}
+
+	var deployErr error
+	switch deploy.Provider {
+	case "ssh":
+		deployErr = executeSSHDeploy(deploy.ToSSHDeployConfig())
+	default:
+		deployErr = fmt.Errorf("unsupported deploy provider: %s", deploy.Provider)
+	}
+
+	// Send notification based on result
+	if deployErr != nil {
+		alertData.Status = "Failed"
+		alertData.Error = deployErr.Error()
+		// Send error notification
+		if err := sendAlert(deploy.Alerts.URLs, alertData); err != nil {
+			log.Printf("Failed to send failure alert: %v", err)
+		}
+		return deployErr
+	}
+
+	// Send success notification
+	alertData.Status = "Success"
+	if err := sendAlert(deploy.Alerts.URLs, alertData); err != nil {
+		log.Printf("Failed to send success alert: %v", err)
+	}
+
+	return nil
+}
+
+// executeSSHDeploy executes deployment commands over SSH
+func executeSSHDeploy(cfg *SSHDeployConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("ssh configuration is required for ssh provider")
+	}
+
+	// Create SSH client
+	auth, err := goph.Key(cfg.KeyPath, "")
+	if err != nil {
+		return fmt.Errorf("failed to load SSH key: %w", err)
+	}
+
+	client, err := goph.New(cfg.User, cfg.Server, auth)
+	if err != nil {
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+	defer client.Close()
+
+	// Execute each command
+	for _, cmd := range cfg.Commands {
+		log.Printf("Executing command: %s", cmd)
+		out, err := client.Run(cmd)
+		if err != nil {
+			return fmt.Errorf("command '%s' failed: %w", cmd, err)
+		}
+		log.Printf("Command output:\n%s", string(out))
 	}
 
 	return nil
@@ -591,14 +782,14 @@ func main() {
 						Name:    "config",
 						Aliases: []string{"c"},
 						Usage:   "Path to the YAML configuration file",
-						Value:   ".gcx.yaml",
+						Value:   "gcx.yaml",
 					},
 				},
 				Action: func(c *cli.Context) error {
 					configPath := c.String("config")
 					cfg, err := loadConfig(configPath)
 					if err != nil {
-						return fmt.Errorf("error loading configuration: %v", err)
+						return fmt.Errorf("error loading configuration: %w", err)
 					}
 					return buildBinaries(cfg)
 				},
@@ -611,16 +802,41 @@ func main() {
 						Name:    "config",
 						Aliases: []string{"c"},
 						Usage:   "Path to the YAML configuration file",
-						Value:   ".gcx.yaml",
+						Value:   "gcx.yaml",
 					},
 				},
 				Action: func(c *cli.Context) error {
 					configPath := c.String("config")
 					cfg, err := loadConfig(configPath)
 					if err != nil {
-						return fmt.Errorf("error loading configuration: %v", err)
+						return fmt.Errorf("error loading configuration: %w", err)
 					}
 					return publishArtifacts(cfg)
+				},
+			},
+			{
+				Name:  "deploy",
+				Usage: "Deploys artifacts based on the configuration",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:    "config",
+						Aliases: []string{"c"},
+						Usage:   "Path to the YAML configuration file",
+						Value:   "gcx.yaml",
+					},
+					&cli.StringFlag{
+						Name:    "name",
+						Aliases: []string{"n"},
+						Usage:   "Name of the deploy configuration to execute",
+					},
+				},
+				Action: func(c *cli.Context) error {
+					configPath := c.String("config")
+					cfg, err := loadConfig(configPath)
+					if err != nil {
+						return fmt.Errorf("error loading configuration: %w", err)
+					}
+					return deployArtifacts(cfg, c.String("name"))
 				},
 			},
 			{
