@@ -15,6 +15,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/containrrr/shoutrrr"
 	"github.com/joho/godotenv"
 	"github.com/melbahja/goph"
 	"github.com/minio/minio-go/v7"
@@ -39,6 +40,7 @@ type Config struct {
 	Builds   []BuildConfig   `yaml:"builds"`
 	Archives []ArchiveConfig `yaml:"archives"`
 	Blobs    []BlobConfig    `yaml:"blobs"`
+	Deploys  []DeployConfig  `yaml:"deploys"`
 }
 
 type HooksConfig struct {
@@ -60,7 +62,7 @@ type ArchiveConfig struct {
 	NameTemplate string   `yaml:"name_template"`
 }
 
-// ArchiveTemplateData содержит данные для шаблона имени архива
+// ArchiveTemplateData contains data for archive name template
 type ArchiveTemplateData struct {
 	Binary  string
 	Version string
@@ -80,6 +82,31 @@ type BlobConfig struct {
 	KeyPath string `yaml:"key_path,omitempty"`
 	// Common fields
 	Directory string `yaml:"directory"`
+}
+
+type DeployConfig struct {
+	Name     string `yaml:"name"`
+	Provider string `yaml:"provider"`
+	// SSH config fields
+	Server   string   `yaml:"server,omitempty"`
+	User     string   `yaml:"user,omitempty"`
+	KeyPath  string   `yaml:"key_path,omitempty"`
+	Commands []string `yaml:"commands"`
+	// Alert configuration
+	Alerts AlertConfig `yaml:"alerts"`
+}
+
+// AlertConfig contains notification settings
+type AlertConfig struct {
+	URLs []string `yaml:"urls"` // URLs in shoutrrr format
+}
+
+// AlertTemplateData contains data for message template
+type AlertTemplateData struct {
+	AppName string
+	Version string
+	Status  string
+	Error   string
 }
 
 // ToS3Config converts BlobConfig to S3Config if provider is s3
@@ -108,6 +135,20 @@ func (c *BlobConfig) ToSSHConfig() *SSHConfig {
 	}
 }
 
+// ToSSHDeployConfig converts DeployConfig to SSHDeployConfig if provider is ssh
+func (c *DeployConfig) ToSSHDeployConfig() *SSHDeployConfig {
+	if c.Provider != "ssh" {
+		return nil
+	}
+	return &SSHDeployConfig{
+		Name:     c.Name,
+		Server:   c.Server,
+		User:     c.User,
+		KeyPath:  c.KeyPath,
+		Commands: c.Commands,
+	}
+}
+
 // Internal config types for type safety
 type S3Config struct {
 	Bucket    string
@@ -121,6 +162,15 @@ type SSHConfig struct {
 	User      string
 	KeyPath   string
 	Directory string
+}
+
+// Internal config types for type safety
+type SSHDeployConfig struct {
+	Name     string
+	Server   string
+	User     string
+	KeyPath  string
+	Commands []string
 }
 
 // loadConfig reads the YAML configuration from the specified file.
@@ -450,28 +500,28 @@ func publishToSSH(cfg *SSHConfig, artifactsDir string, tmplData map[string]strin
 	return nil
 }
 
-// createArchives создает архивы для всех собранных бинарных файлов
+// createArchives creates archives for all built binaries
 func createArchives(cfg *Config, artifactsDir string) error {
 	if len(cfg.Archives) == 0 {
 		return nil
 	}
 
-	// Получаем текущую версию
+	// Get current version
 	version := getGitTag()
 
-	// Читаем все файлы в директории артефактов
+	// Read all files in artifacts directory
 	files, err := os.ReadDir(artifactsDir)
 	if err != nil {
 		return fmt.Errorf("failed to read artifacts directory: %v", err)
 	}
 
-	// Для каждого файла создаем архивы согласно конфигурации
+	// Create archives for each file according to configuration
 	for _, file := range files {
 		if file.IsDir() {
 			continue
 		}
 
-		// Парсим имя файла для получения информации о платформе
+		// Parse filename to get platform information
 		fileName := file.Name()
 		parts := strings.Split(fileName, "_")
 		if len(parts) < 3 {
@@ -482,7 +532,7 @@ func createArchives(cfg *Config, artifactsDir string) error {
 		os := parts[1]
 		arch := parts[2]
 
-		// Данные для шаблона
+		// Template data
 		tmplData := ArchiveTemplateData{
 			Binary:  binary,
 			Version: version,
@@ -490,9 +540,9 @@ func createArchives(cfg *Config, artifactsDir string) error {
 			Arch:    arch,
 		}
 
-		// Для каждой конфигурации архива
+		// For each archive configuration
 		for _, archive := range cfg.Archives {
-			// Создаем имя архива из шаблона
+			// Create archive name from template
 			tmpl, err := template.New("archive").Parse(archive.NameTemplate)
 			if err != nil {
 				return fmt.Errorf("failed to parse archive name template: %v", err)
@@ -503,7 +553,7 @@ func createArchives(cfg *Config, artifactsDir string) error {
 				return fmt.Errorf("failed to execute archive name template: %v", err)
 			}
 
-			// Для каждого формата архива
+			// For each archive format
 			for _, format := range archive.Formats {
 				archiveName := nameBuffer.String() + "." + format
 				archivePath := filepath.Join(artifactsDir, archiveName)
@@ -513,7 +563,7 @@ func createArchives(cfg *Config, artifactsDir string) error {
 					if err := createTarGz(filepath.Join(artifactsDir, fileName), archivePath); err != nil {
 						return fmt.Errorf("failed to create tar.gz archive: %v", err)
 					}
-				// Здесь можно добавить поддержку других форматов архивов
+				// Here you can add support for other archive formats
 				default:
 					log.Printf("Unsupported archive format: %s", format)
 				}
@@ -524,37 +574,37 @@ func createArchives(cfg *Config, artifactsDir string) error {
 	return nil
 }
 
-// createTarGz создает tar.gz архив из файла
+// createTarGz creates a tar.gz archive from a file
 func createTarGz(srcFile, destFile string) error {
-	// Создаем файл архива
+	// Create archive file
 	archive, err := os.Create(destFile)
 	if err != nil {
 		return fmt.Errorf("failed to create archive file: %v", err)
 	}
 	defer archive.Close()
 
-	// Создаем gzip writer
+	// Create gzip writer
 	gw := gzip.NewWriter(archive)
 	defer gw.Close()
 
-	// Создаем tar writer
+	// Create tar writer
 	tw := tar.NewWriter(gw)
 	defer tw.Close()
 
-	// Открываем исходный файл
+	// Open source file
 	file, err := os.Open(srcFile)
 	if err != nil {
 		return fmt.Errorf("failed to open source file: %v", err)
 	}
 	defer file.Close()
 
-	// Получаем информацию о файле
+	// Get file info
 	stat, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("failed to get file info: %v", err)
 	}
 
-	// Создаем заголовок tar
+	// Create tar header
 	header := &tar.Header{
 		Name:    filepath.Base(srcFile),
 		Size:    stat.Size(),
@@ -562,14 +612,152 @@ func createTarGz(srcFile, destFile string) error {
 		ModTime: stat.ModTime(),
 	}
 
-	// Записываем заголовок
+	// Write header
 	if err := tw.WriteHeader(header); err != nil {
 		return fmt.Errorf("failed to write tar header: %v", err)
 	}
 
-	// Копируем содержимое файла в архив
+	// Copy file contents to archive
 	if _, err := io.Copy(tw, file); err != nil {
 		return fmt.Errorf("failed to write file to tar: %v", err)
+	}
+
+	return nil
+}
+
+// deployArtifacts executes deployment according to the configuration
+func deployArtifacts(cfg *Config, deployName string) error {
+	if len(cfg.Deploys) == 0 {
+		return fmt.Errorf("no deploy configurations found")
+	}
+
+	// If deployName is specified, execute only that deploy
+	if deployName != "" {
+		for _, deploy := range cfg.Deploys {
+			if deploy.Name == deployName {
+				return executeDeploy(&deploy)
+			}
+		}
+		return fmt.Errorf("deploy configuration '%s' not found", deployName)
+	}
+
+	// Execute all deploys
+	for _, deploy := range cfg.Deploys {
+		if err := executeDeploy(&deploy); err != nil {
+			return fmt.Errorf("deploy '%s' failed: %v", deploy.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// sendAlert sends notification through shoutrrr
+func sendAlert(urls []string, tmplData AlertTemplateData) error {
+	if len(urls) == 0 {
+		return nil
+	}
+
+	// Create message template
+	const msgTemplate = `
+Deployment Status Update
+Application: {{.AppName}}
+Version: {{.Version}}
+Status: {{.Status}}
+{{if .Error}}Error: {{.Error}}{{end}}
+`
+
+	tmpl, err := template.New("alert").Parse(msgTemplate)
+	if err != nil {
+		return fmt.Errorf("failed to parse alert template: %v", err)
+	}
+
+	var msgBuffer strings.Builder
+	if err := tmpl.Execute(&msgBuffer, tmplData); err != nil {
+		return fmt.Errorf("failed to execute alert template: %v", err)
+	}
+
+	// Create sender for all URLs
+	sender, err := shoutrrr.CreateSender(urls...)
+	if err != nil {
+		return fmt.Errorf("failed to create alert sender: %v", err)
+	}
+
+	// Send notification
+	errs := sender.Send(msgBuffer.String(), nil)
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to send alerts: %v", errs)
+	}
+
+	return nil
+}
+
+// executeDeploy executes a single deployment configuration
+func executeDeploy(deploy *DeployConfig) error {
+	log.Printf("Executing deploy: %s", deploy.Name)
+
+	// Get current version for notifications
+	version := getGitTag()
+
+	// Prepare notification data
+	alertData := AlertTemplateData{
+		AppName: deploy.Name,
+		Version: version,
+	}
+
+	var deployErr error
+	switch deploy.Provider {
+	case "ssh":
+		deployErr = executeSSHDeploy(deploy.ToSSHDeployConfig())
+	default:
+		deployErr = fmt.Errorf("unsupported deploy provider: %s", deploy.Provider)
+	}
+
+	// Send notification based on result
+	if deployErr != nil {
+		alertData.Status = "Failed"
+		alertData.Error = deployErr.Error()
+		// Send error notification
+		if err := sendAlert(deploy.Alerts.URLs, alertData); err != nil {
+			log.Printf("Failed to send failure alert: %v", err)
+		}
+		return deployErr
+	}
+
+	// Send success notification
+	alertData.Status = "Success"
+	if err := sendAlert(deploy.Alerts.URLs, alertData); err != nil {
+		log.Printf("Failed to send success alert: %v", err)
+	}
+
+	return nil
+}
+
+// executeSSHDeploy executes deployment commands over SSH
+func executeSSHDeploy(cfg *SSHDeployConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("ssh configuration is required for ssh provider")
+	}
+
+	// Create SSH client
+	auth, err := goph.Key(cfg.KeyPath, "")
+	if err != nil {
+		return fmt.Errorf("failed to load SSH key: %v", err)
+	}
+
+	client, err := goph.New(cfg.User, cfg.Server, auth)
+	if err != nil {
+		return fmt.Errorf("failed to create SSH client: %v", err)
+	}
+	defer client.Close()
+
+	// Execute each command
+	for _, cmd := range cfg.Commands {
+		log.Printf("Executing command: %s", cmd)
+		out, err := client.Run(cmd)
+		if err != nil {
+			return fmt.Errorf("command '%s' failed: %v", cmd, err)
+		}
+		log.Printf("Command output:\n%s", string(out))
 	}
 
 	return nil
@@ -591,7 +779,7 @@ func main() {
 						Name:    "config",
 						Aliases: []string{"c"},
 						Usage:   "Path to the YAML configuration file",
-						Value:   ".gcx.yaml",
+						Value:   "gcx.yaml",
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -611,7 +799,7 @@ func main() {
 						Name:    "config",
 						Aliases: []string{"c"},
 						Usage:   "Path to the YAML configuration file",
-						Value:   ".gcx.yaml",
+						Value:   "gcx.yaml",
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -621,6 +809,31 @@ func main() {
 						return fmt.Errorf("error loading configuration: %v", err)
 					}
 					return publishArtifacts(cfg)
+				},
+			},
+			{
+				Name:  "deploy",
+				Usage: "Deploys artifacts based on the configuration",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:    "config",
+						Aliases: []string{"c"},
+						Usage:   "Path to the YAML configuration file",
+						Value:   "gcx.yaml",
+					},
+					&cli.StringFlag{
+						Name:    "name",
+						Aliases: []string{"n"},
+						Usage:   "Name of the deploy configuration to execute",
+					},
+				},
+				Action: func(c *cli.Context) error {
+					configPath := c.String("config")
+					cfg, err := loadConfig(configPath)
+					if err != nil {
+						return fmt.Errorf("error loading configuration: %v", err)
+					}
+					return deployArtifacts(cfg, c.String("name"))
 				},
 			},
 			{
