@@ -4,14 +4,15 @@
 
 ## Features
 
-- **Cross-compilation:** Build Go binaries for multiple OS/architecture combinations.
-- **Automated publishing:** Upload build artifacts to S3 (including self-hosted endpoints) or SSH.
-- **Configuration driven:** Use a YAML config file (`gcx.yaml`) to define build, archive, and publish settings.
-- **Versioning:** Automatically determine the version using the current Git tag.
-- **CI/CD friendly:** Easily integrate with CI pipelines (e.g., GitLab CI).
-- **Hooks system:** Execute commands before and after build process.
-- **Archiving:** Create archives (tar.gz) of your binaries with customizable naming.
-- **Deployment:** Deploy your artifacts to servers via SSH with custom commands.
+- 🔨 **Cross-compilation:** Build Go binaries for multiple OS/architecture combinations.
+- 🚀 **Automated publishing:** Upload build artifacts to S3 (including self-hosted endpoints) or SSH.
+- ⚙️ **Configuration driven:** Use a YAML config file (`gcx.yaml`) to define build, archive, and publish settings.
+- 🏷️ **Versioning:** Automatically determine the version using the current Git tag.
+- 🔄 **CI/CD friendly:** Easily integrate with CI pipelines (e.g., GitLab CI).
+- 🎣 **Hooks system:** Execute commands before and after build process.
+- 📦 **Archiving:** Create archives (tar.gz) of your binaries with customizable naming.
+- 🚢 **Deployment:** Deploy your artifacts to servers via SSH with custom commands.
+- 🔔 **Notifications:** Send deployment status alerts to multiple channels (Telegram, Slack, Discord, Teams) using Shoutrrr.
 
 ## Installation
 
