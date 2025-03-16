@@ -30,13 +30,14 @@ var (
 type Config struct {
 	Version  int             `yaml:"version"`
 	OutDir   string          `yaml:"out_dir"` // Optional output directory; default is "dist"
-	Before   BeforeConfig    `yaml:"before"`
+	Before   HooksConfig     `yaml:"before"`
+	After    HooksConfig     `yaml:"after"`
 	Builds   []BuildConfig   `yaml:"builds"`
 	Archives []ArchiveConfig `yaml:"archives"`
 	Blobs    []BlobConfig    `yaml:"blobs"`
 }
 
-type BeforeConfig struct {
+type HooksConfig struct {
 	Hooks []string `yaml:"hooks"`
 }
 
@@ -189,6 +190,14 @@ func buildBinaries(cfg *Config) error {
 			}
 		}
 	}
+
+	// Execute after hooks
+	if len(cfg.After.Hooks) > 0 {
+		if err := runHooks(cfg.After.Hooks); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

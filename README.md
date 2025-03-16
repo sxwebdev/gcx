@@ -39,6 +39,10 @@ before:
   hooks:
     - go mod tidy
 
+after:
+  hooks:
+    - ./binary version
+
 builds:
   - main: ./cmd/myapp
     env:
