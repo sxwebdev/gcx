@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"text/template"
 
@@ -21,7 +23,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/urfave/cli/v2"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 // Version values can be set at build time using ldflags.
@@ -35,31 +37,31 @@ var (
 type Config struct {
 	Version  int             `yaml:"version"`
 	OutDir   string          `yaml:"out_dir"` // Optional output directory; default is "dist"
-	Before   HooksConfig     `yaml:"before"`
-	After    HooksConfig     `yaml:"after"`
-	Builds   []BuildConfig   `yaml:"builds"`
-	Archives []ArchiveConfig `yaml:"archives"`
-	Blobs    []BlobConfig    `yaml:"blobs"`
-	Deploys  []DeployConfig  `yaml:"deploys"`
+	Before   HooksConfig     `yaml:"before,omitempty"`
+	After    HooksConfig     `yaml:"after,omitempty"`
+	Builds   []BuildConfig   `yaml:"builds,omitempty"`
+	Archives []ArchiveConfig `yaml:"archives,omitempty"`
+	Blobs    []BlobConfig    `yaml:"blobs,omitempty"`
+	Deploys  []DeployConfig  `yaml:"deploys,omitempty"`
 }
 
 type HooksConfig struct {
-	Hooks []string `yaml:"hooks"`
+	Hooks []string `yaml:"hooks,omitempty"`
 }
 
 type BuildConfig struct {
 	Main    string   `yaml:"main"`
-	Env     []string `yaml:"env"`
-	Goos    []string `yaml:"goos"`
-	Goarch  []string `yaml:"goarch"`
-	Goarm   []string `yaml:"goarm"`
-	Flags   []string `yaml:"flags"`
-	Ldflags []string `yaml:"ldflags"`
+	Env     []string `yaml:"env,omitempty"`
+	Goos    []string `yaml:"goos,omitempty"`
+	Goarch  []string `yaml:"goarch,omitempty"`
+	Goarm   []string `yaml:"goarm,omitempty"`
+	Flags   []string `yaml:"flags,omitempty"`
+	Ldflags []string `yaml:"ldflags,omitempty"`
 }
 
 type ArchiveConfig struct {
-	Formats      []string `yaml:"formats"`
-	NameTemplate string   `yaml:"name_template"`
+	Formats      []string `yaml:"formats,omitempty"`
+	NameTemplate string   `yaml:"name_template,omitempty"`
 }
 
 // ArchiveTemplateData contains data for archive name template
@@ -93,12 +95,12 @@ type DeployConfig struct {
 	KeyPath  string   `yaml:"key_path,omitempty"`
 	Commands []string `yaml:"commands"`
 	// Alert configuration
-	Alerts AlertConfig `yaml:"alerts"`
+	Alerts AlertConfig `yaml:"alerts,omitempty"`
 }
 
 // AlertConfig contains notification settings
 type AlertConfig struct {
-	URLs []string `yaml:"urls"` // URLs in shoutrrr format
+	URLs []string `yaml:"urls,omitempty"` // URLs in shoutrrr format
 }
 
 // AlertTemplateData contains data for message template
@@ -1023,6 +1025,91 @@ func main() {
 				Action: func(c *cli.Context) error {
 					fmt.Printf("gcx version: %s\ncommit: %s\nbuild date: %s\n", version, commit, buildDate)
 					return nil
+				},
+			},
+			{
+				Name:  "config",
+				Usage: "Configuration related commands",
+				Subcommands: []*cli.Command{
+					{
+						Name:  "init",
+						Usage: "Initialize a new gcx.yaml configuration file",
+						Flags: []cli.Flag{
+							&cli.StringFlag{
+								Name:    "os",
+								Aliases: []string{"o"},
+								Usage:   "Target operating system",
+								Value:   runtime.GOOS,
+							},
+							&cli.StringFlag{
+								Name:    "arch",
+								Aliases: []string{"a"},
+								Usage:   "Target architecture",
+								Value:   runtime.GOARCH,
+							},
+							&cli.BoolFlag{
+								Name:    "force",
+								Aliases: []string{"f"},
+								Usage:   "Force overwrite existing config file",
+								Value:   false,
+							},
+							&cli.StringFlag{
+								Name:    "config",
+								Aliases: []string{"c"},
+								Usage:   "Path to the configuration file",
+								Value:   "gcx.yaml",
+							},
+							&cli.StringFlag{
+								Name:    "main",
+								Aliases: []string{"m"},
+								Usage:   "Path to the main Go file",
+								Value:   "./cmd/app",
+							},
+						},
+						Action: func(c *cli.Context) error {
+							configPath := c.String("config")
+							if _, err := os.Stat(configPath); err == nil && !c.Bool("force") {
+								return fmt.Errorf("%s already exists. Use --force / -f to overwrite", configPath)
+							}
+
+							config := &Config{
+								Version: 1,
+								OutDir:  "dist",
+								Builds: []BuildConfig{
+									{
+										Main:   c.String("main"),
+										Goos:   []string{c.String("os")},
+										Goarch: []string{c.String("arch")},
+										Flags:  []string{"-trimpath"},
+										Ldflags: []string{
+											"-s",
+											"-w",
+											"-X main.version={{.Version}}",
+											"-X main.commit={{.Commit}}",
+											"-X main.buildDate={{.Date}}",
+										},
+									},
+								},
+							}
+
+							buf := bytes.NewBuffer(nil)
+							marshaller := yaml.NewEncoder(buf)
+							defer marshaller.Close()
+
+							marshaller.SetIndent(2)
+
+							if err := marshaller.Encode(config); err != nil {
+								return fmt.Errorf("failed to marshal config: %w", err)
+							}
+
+							if err := os.WriteFile(configPath, buf.Bytes(), 0o644); err != nil {
+								return fmt.Errorf("failed to write config file: %w", err)
+							}
+
+							fmt.Printf("Created %s with default configuration\n", configPath)
+							return nil
+						},
+					},
 				},
 			},
 		},

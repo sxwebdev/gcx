@@ -8,7 +8,7 @@ require (
 	github.com/melbahja/goph v1.4.0
 	github.com/minio/minio-go/v7 v7.0.88
 	github.com/urfave/cli/v2 v2.27.6
-	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

@@ -52,6 +52,7 @@ COMMANDS:
    release  Release related commands
    git      Git related commands
    version  Displays the current version
+   config   Configuration related commands
    help, h  Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:
@@ -249,6 +250,13 @@ Error: command 'systemctl start myapp' failed: exit status 1
 Once installed, you can run the following commands:
 
 ```bash
+# Initialize a new gcx.yaml configuration file
+gcx config init
+gcx config init --os linux --arch amd64  # Create config for specific platform
+gcx config init --main ./cmd/myapp       # Create config with custom main file
+gcx config init --config custom.yaml     # Create config with custom name
+gcx config init --force                  # Overwrite existing config
+
 # Build binaries according to configuration
 gcx build
 
@@ -264,6 +272,7 @@ gcx git version
 
 # Generate a changelog between current and previous git tags
 gcx release changelog
+gcx release changelog --stable  # Compare with previous stable version
 
 # Show gcx version information
 gcx version
@@ -285,6 +294,37 @@ Example changelog output:
 - Fix documentation by @another-author in def5678
 
 **Full Changelog**: https://github.com/user/repo/compare/v0.0.1...v0.0.2
+```
+
+### Configuration Initialization
+
+The `config init` command creates a new `gcx.yaml` file with default settings. Available flags:
+
+- `--os, -o`: Target operating system (default: current OS)
+- `--arch, -a`: Target architecture (default: current arch)
+- `--main, -m`: Path to the main Go file (default: ./cmd/app)
+- `--config, -c`: Path to the configuration file (default: gcx.yaml)
+- `--force, -f`: Force overwrite existing config file
+
+Example of generated configuration:
+
+```yaml
+version: 1
+out_dir: dist
+builds:
+  - main: ./cmd/app
+    goos:
+      - linux
+    goarch:
+      - amd64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s
+      - -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.buildDate={{.Date}}
 ```
 
 ## GitLab CI/CD Integration Example
