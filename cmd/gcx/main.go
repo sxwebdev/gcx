@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
@@ -242,6 +243,45 @@ func getPreviousGitTag() string {
 	for i, tag := range tags {
 		if tag == currentTag && i+1 < len(tags) {
 			return tags[i+1]
+		}
+	}
+
+	return "0.0.0"
+}
+
+// getPreviousStableGitTag returns the previous stable git tag (without pre-release suffix)
+func getPreviousStableGitTag() string {
+	// Get all tags sorted by version
+	cmd := exec.Command("git", "tag", "-l", "--sort=-v:refname")
+	out, err := cmd.Output()
+	if err != nil {
+		log.Printf("Failed to get git tags: %v. Using default value 0.0.0", err)
+		return "0.0.0"
+	}
+
+	tags := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(tags) == 0 {
+		log.Println("No tags found, using default value 0.0.0")
+		return "0.0.0"
+	}
+
+	// Regular expression to match stable version tags (vX.Y.Z without any suffix)
+	stableTagRegex := regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
+
+	currentTag := getGitTag()
+	foundCurrent := false
+
+	// Look for the first stable tag that's not the current one
+	for _, tag := range tags {
+		// If we haven't found current tag yet, check if this is it
+		if !foundCurrent && tag == currentTag {
+			foundCurrent = true
+			continue
+		}
+
+		// If this is a stable tag, return it
+		if stableTagRegex.MatchString(tag) {
+			return tag
 		}
 	}
 
@@ -936,9 +976,21 @@ func main() {
 					{
 						Name:  "changelog",
 						Usage: "Generate a changelog between the current and previous git tags",
+						Flags: []cli.Flag{
+							&cli.BoolFlag{
+								Name:    "stable",
+								Aliases: []string{"s"},
+								Usage:   "Compare with previous stable version (vX.Y.Z without pre-release suffix)",
+							},
+						},
 						Action: func(c *cli.Context) error {
 							currentTag := getGitTag()
-							previousTag := getPreviousGitTag()
+							var previousTag string
+							if c.Bool("stable") {
+								previousTag = getPreviousStableGitTag()
+							} else {
+								previousTag = getPreviousGitTag()
+							}
 
 							changelog, err := getGitChangelog(previousTag, currentTag)
 							if err != nil {
