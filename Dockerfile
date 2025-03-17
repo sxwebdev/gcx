@@ -13,7 +13,7 @@ RUN go mod download
 
 # Copy the source code and compile the gcx binary using ldflags.
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" -v -o ./bin/gcx ./cmd/gcx
+RUN CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${DATE}" -v -o ./bin/gcx ./cmd/gcx
 
 # Final image based on Alpine with necessary packages.
 FROM golang:1.24-alpine
