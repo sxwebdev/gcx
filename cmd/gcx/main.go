@@ -300,6 +300,13 @@ func buildBinaries(cfg *Config) error {
 		outDir = "dist"
 	}
 
+	// Clean the output directory if it exists
+	if _, err := os.Stat(outDir); err == nil {
+		if err := os.RemoveAll(outDir); err != nil {
+			return fmt.Errorf("failed to clean output directory: %w", err)
+		}
+	}
+
 	// Create the build directory
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
@@ -579,6 +586,9 @@ func createArchives(cfg *Config, artifactsDir string) error {
 		return fmt.Errorf("failed to read artifacts directory: %w", err)
 	}
 
+	// Track which files were archived
+	archivedFiles := make(map[string]bool)
+
 	// Create archives for each file according to configuration
 	for _, file := range files {
 		if file.IsDir() {
@@ -627,10 +637,26 @@ func createArchives(cfg *Config, artifactsDir string) error {
 					if err := createTarGz(filepath.Join(artifactsDir, fileName), archivePath); err != nil {
 						return fmt.Errorf("failed to create tar.gz archive: %w", err)
 					}
+					// Mark the source file as archived
+					archivedFiles[fileName] = true
 				// Here you can add support for other archive formats
 				default:
 					log.Printf("Unsupported archive format: %s", format)
 				}
+			}
+		}
+	}
+
+	// Remove all source files that were archived
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		fileName := file.Name()
+		if archivedFiles[fileName] {
+			filePath := filepath.Join(artifactsDir, fileName)
+			if err := os.Remove(filePath); err != nil {
+				log.Printf("Warning: failed to remove source file %s: %v", filePath, err)
 			}
 		}
 	}
