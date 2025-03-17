@@ -2,11 +2,14 @@ name: Homebrew Release
 
 on:
   workflow_dispatch:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release"]
+    types:
+      - completed
 
 jobs:
   release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,10 +19,10 @@ jobs:
       - name: Get version
         id: get_version
         run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
-            echo "VERSION=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
-          else
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "VERSION=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${{ github.event.workflow_run.head_commit.id }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Download Release Assets
