@@ -34,6 +34,46 @@ Alternatively, you can use the Docker image available on Docker Hub:
 docker pull sxwebdev/gcx:latest
 ```
 
+## How to use
+
+```text
+# gcx help
+
+NAME:
+   gcx - A tool for cross-compiling and publishing Go binaries
+
+USAGE:
+   gcx [global options] command [command options]
+
+COMMANDS:
+   build    Compiles binaries
+   publish  Publishes artifacts based on the configuration
+   deploy   Deploys artifacts based on the configuration
+   git      Git related commands
+   version  Displays the current version
+   help, h  Shows a list of commands or help for one command
+
+GLOBAL OPTIONS:
+   --help, -h  show help
+```
+
+### Git related commands
+
+```text
+NAME:
+   gcx git - Git related commands
+
+USAGE:
+   gcx git [command options]
+
+COMMANDS:
+   version  Displays the current git tag version
+   help, h  Shows a list of commands or help for one command
+
+OPTIONS:
+   --help, -h  show help
+```
+
 ## Configuration
 
 Create a YAML configuration file named `gcx.yaml` in your project root. An example configuration:
