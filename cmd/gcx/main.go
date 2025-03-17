@@ -14,7 +14,6 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/containrrr/shoutrrr"
 	"github.com/joho/godotenv"
@@ -27,9 +26,9 @@ import (
 
 // Version values can be set at build time using ldflags.
 var (
-	version = "dev"
-	commit  = "none"
-	date    = time.Now().Format(time.RFC3339)
+	version   = "dev"
+	commit    = "none"
+	buildDate = ""
 )
 
 // Config represents the configuration file structure (similar to GoReleaser configuration).
@@ -1022,7 +1021,7 @@ func main() {
 				Name:  "version",
 				Usage: "Displays the current version",
 				Action: func(c *cli.Context) error {
-					fmt.Printf("gcx version: %s\ncommit: %s\ndate: %s\n", version, commit, date)
+					fmt.Printf("gcx version: %s\ncommit: %s\nbuild date: %s\n", version, commit, buildDate)
 					return nil
 				},
 			},
