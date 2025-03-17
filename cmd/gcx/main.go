@@ -221,6 +221,70 @@ func getGitTag() string {
 	return tag
 }
 
+// getPreviousGitTag returns the previous git tag before the current one
+func getPreviousGitTag() string {
+	// Get all tags sorted by version
+	cmd := exec.Command("git", "tag", "-l", "--sort=-v:refname")
+	out, err := cmd.Output()
+	if err != nil {
+		log.Printf("Failed to get git tags: %v. Using default value 0.0.0", err)
+		return "0.0.0"
+	}
+
+	tags := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(tags) < 2 {
+		log.Println("No previous tag found, using default value 0.0.0")
+		return "0.0.0"
+	}
+
+	// Current tag should be the first one, so return the second one
+	currentTag := getGitTag()
+	for i, tag := range tags {
+		if tag == currentTag && i+1 < len(tags) {
+			return tags[i+1]
+		}
+	}
+
+	return "0.0.0"
+}
+
+// getGitChangelog returns a markdown formatted changelog between two tags
+func getGitChangelog(from, to string) (string, error) {
+	// Get the repository URL
+	remoteCmd := exec.Command("git", "config", "--get", "remote.origin.url")
+	remoteOut, err := remoteCmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get remote URL: %w", err)
+	}
+
+	// Convert SSH URL to HTTPS URL if necessary
+	repoURL := strings.TrimSpace(string(remoteOut))
+	repoURL = strings.TrimSuffix(repoURL, ".git")
+	if strings.HasPrefix(repoURL, "git@") {
+		repoURL = strings.Replace(repoURL, ":", "/", 1)
+		repoURL = strings.Replace(repoURL, "git@", "https://", 1)
+	}
+
+	// Get all commits between tags
+	cmd := exec.Command("git", "log",
+		"--pretty=format:* %s by @%an in %h", // Format each commit as a markdown list item with author and short hash
+		fmt.Sprintf("%s..%s", from, to))      // From older to newer tag
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get git log: %w", err)
+	}
+
+	// Create the final markdown
+	var sb strings.Builder
+	sb.WriteString("## What's Changed\n\n")
+	sb.WriteString(string(out) + "\n")
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("**Full Changelog**: %s/compare/%s...%s\n",
+		repoURL, from, to))
+
+	return sb.String(), nil
+}
+
 // buildBinaries performs cross-compilation of binaries according to the configuration.
 func buildBinaries(cfg *Config) error {
 	// Execute hooks (e.g., "go mod tidy")
@@ -837,6 +901,28 @@ func main() {
 						return fmt.Errorf("error loading configuration: %w", err)
 					}
 					return deployArtifacts(cfg, c.String("name"))
+				},
+			},
+			{
+				Name:  "release",
+				Usage: "Release related commands",
+				Subcommands: []*cli.Command{
+					{
+						Name:  "changelog",
+						Usage: "Generate a changelog between the current and previous git tags",
+						Action: func(c *cli.Context) error {
+							currentTag := getGitTag()
+							previousTag := getPreviousGitTag()
+
+							changelog, err := getGitChangelog(previousTag, currentTag)
+							if err != nil {
+								return fmt.Errorf("failed to generate changelog: %w", err)
+							}
+
+							fmt.Println(changelog)
+							return nil
+						},
+					},
 				},
 			},
 			{
