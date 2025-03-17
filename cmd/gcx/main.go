@@ -840,6 +840,21 @@ func main() {
 				},
 			},
 			{
+				Name:  "git",
+				Usage: "Git related commands",
+				Subcommands: []*cli.Command{
+					{
+						Name:  "version",
+						Usage: "Displays the current git tag version",
+						Action: func(c *cli.Context) error {
+							tag := getGitTag()
+							fmt.Printf("Current git version: %s\n", tag)
+							return nil
+						},
+					},
+				},
+			},
+			{
 				Name:  "version",
 				Usage: "Displays the current version",
 				Action: func(c *cli.Context) error {
