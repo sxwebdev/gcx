@@ -372,6 +372,28 @@ func buildBinaries(cfg *Config) error {
 	commitHash := getGitCommitHash()
 	buildDate := time.Now().Format(time.RFC3339)
 
+	// Extract environment variable names from ldflags
+	envVarNames := make(map[string]bool)
+	for _, buildCfg := range cfg.Builds {
+		for _, ldflag := range buildCfg.Ldflags {
+			// Find all occurrences of {{.Env.VARIABLE_NAME}}
+			matches := regexp.MustCompile(`{{\.Env\.([^}]+)}}`).FindAllStringSubmatch(ldflag, -1)
+			for _, match := range matches {
+				if len(match) > 1 {
+					envVarNames[match[1]] = true
+				}
+			}
+		}
+	}
+
+	// Create a map of environment variables that are actually used
+	envVars := make(map[string]string)
+	for name := range envVarNames {
+		if value := os.Getenv(name); value != "" {
+			envVars[name] = value
+		}
+	}
+
 	// For each build configuration
 	for _, buildCfg := range cfg.Builds {
 		// Determine the binary name
@@ -400,10 +422,12 @@ func buildBinaries(cfg *Config) error {
 				Version string
 				Commit  string
 				Date    string
+				Env     map[string]string
 			}{
 				Version: currentTag,
 				Commit:  commitHash,
 				Date:    buildDate,
+				Env:     envVars,
 			}
 
 			if err := tmpl.Execute(&buf, data); err != nil {

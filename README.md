@@ -171,19 +171,52 @@ deploys:
 
 ### Template Variables
 
-Available in various template strings throughout the configuration:
+The following variables are available in templates:
 
-- **Version:** Current Git tag (defaults to `0.0.0` if no tag found)
-- **Binary:** Name of the binary being built
-- **Os:** Target operating system
-- **Arch:** Target architecture
+- `{{.Version}}` - Current version (from git tag)
+- `{{.Commit}}` - Current git commit hash
+- `{{.Date}}` - Build date
+- `{{.Binary}}` - Binary name
+- `{{.Os}}` - Operating system
+- `{{.Arch}}` - Architecture
+- `{{.Env.VARIABLE_NAME}}` - Environment variable value (from .env file or system environment)
 
-## Environment Variables
+### Environment Variables
 
-Set the following environment variables (either in your system or in a `.env` file):
+You can use environment variables in your ldflags and other templates. Variables can be set in:
 
-- `AWS_ACCESS_KEY_ID` - AWS access key для S3
-- `AWS_SECRET_ACCESS_KEY` - AWS secret key для S3
+1. `.env` file in your project root
+2. System environment variables
+3. CI/CD environment variables
+
+For security reasons, only environment variables that are explicitly referenced in your configuration (using `{{.Env.VARIABLE_NAME}}`) will be available during the build process. This prevents accidentally exposing sensitive system environment variables.
+
+Example usage in ldflags:
+
+```yaml
+ldflags:
+  - "-X main.apiKey={{.Env.API_KEY}}"
+  - "-X main.environment={{.Env.ENVIRONMENT}}"
+  - "-X main.debug={{.Env.DEBUG}}"
+```
+
+And in your `.env` file:
+
+```env
+API_KEY=your-secret-key
+ENVIRONMENT=production
+DEBUG=false
+```
+
+You can also set build-specific environment variables in the configuration:
+
+```yaml
+builds:
+  - main: "./cmd/app"
+    env:
+      - "CGO_ENABLED=0"
+      - "GO111MODULE=on"
+```
 
 ## Alerts Configuration
 
