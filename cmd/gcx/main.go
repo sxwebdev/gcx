@@ -1141,12 +1141,10 @@ func main() {
 								OutDir:  "dist",
 								Builds: []BuildConfig{
 									{
-										Main:                  c.String("main"),
-										OutputName:            "", // Use default name from main path
-										DisablePlatformSuffix: true,
-										Goos:                  []string{c.String("os")},
-										Goarch:                []string{c.String("arch")},
-										Flags:                 []string{"-trimpath"},
+										Main:   c.String("main"),
+										Goos:   []string{c.String("os")},
+										Goarch: []string{c.String("arch")},
+										Flags:  []string{"-trimpath"},
 										Ldflags: []string{
 											"-s",
 											"-w",
