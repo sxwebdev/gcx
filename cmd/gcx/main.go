@@ -502,21 +502,8 @@ func publishArtifacts(cfg *Config) error {
 	// Get the current git tag as the version.
 	tag := getGitTag()
 
-	// Determine ProjectID: if the environment variable is not set, use the name of the working directory.
-	projectID := os.Getenv("PROJECT_ID")
-	if projectID == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			log.Printf("Failed to determine working directory: %v", err)
-			projectID = "default"
-		} else {
-			projectID = filepath.Base(wd)
-		}
-	}
-
 	tmplData := map[string]string{
-		"Version":   tag,
-		"ProjectID": projectID,
+		"Version": tag,
 	}
 
 	// Process each blob configuration
@@ -1146,8 +1133,7 @@ func main() {
 										Goarch: []string{c.String("arch")},
 										Flags:  []string{"-trimpath"},
 										Ldflags: []string{
-											"-s",
-											"-w",
+											"-s -w",
 											"-X main.version={{.Version}}",
 											"-X main.commit={{.Commit}}",
 											"-X main.buildDate={{.Date}}",
