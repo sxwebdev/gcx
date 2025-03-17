@@ -19,10 +19,10 @@
 You can download the pre-built binary from the [releases](https://github.com/sxwebdev/gcx/releases) page or build it from source:
 
 ```bash
+# Install from source
 go install github.com/sxwebdev/gcx@latest
 
-# or
-
+# Or build from source
 git clone https://github.com/sxwebdev/gcx.git
 cd gcx
 make build
@@ -111,8 +111,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s
-      - -w
+      - -s -w
       - -X main.version={{.Version}}
       - -X main.commit={{.Commit}}
       - -X main.buildDate={{.Date}}
@@ -126,7 +125,7 @@ archives:
 blobs:
   - provider: s3
     bucket: your-bucket-name
-    directory: "releases/{{.ProjectID}}/{{.Version}}"
+    directory: "releases/{{.Version}}"
     region: us-west-1
     endpoint: https://s3.example.com
 
@@ -134,7 +133,7 @@ blobs:
     server: "storage.example.com"
     user: "deployer"
     key_path: "~/.ssh/deploy_key"
-    directory: "/var/www/releases/{{.ProjectID}}/{{.Version}}"
+    directory: "/var/www/releases/{{.Version}}"
 
 # Deployment configuration
 deploys:
@@ -178,15 +177,13 @@ Available in various template strings throughout the configuration:
 - **Binary:** Name of the binary being built
 - **Os:** Target operating system
 - **Arch:** Target architecture
-- **ProjectID:** Project identifier (from env or directory name)
 
 ## Environment Variables
 
 Set the following environment variables (either in your system or in a `.env` file):
 
-- `AWS_ACCESS_KEY_ID` - Your AWS access key (for S3 provider)
-- `AWS_SECRET_ACCESS_KEY` - Your AWS secret key (for S3 provider)
-- `PROJECT_ID` (optional) - Your project identifier. If not provided, the current directory name is used.
+- `AWS_ACCESS_KEY_ID` - AWS access key для S3
+- `AWS_SECRET_ACCESS_KEY` - AWS secret key для S3
 
 ## Alerts Configuration
 
@@ -328,8 +325,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s
-      - -w
+      - -s -w
       - -X main.version={{.Version}}
       - -X main.commit={{.Commit}}
       - -X main.buildDate={{.Date}}
