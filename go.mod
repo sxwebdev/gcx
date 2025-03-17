@@ -1,4 +1,4 @@
-module gcx
+module github.com/sxwebdev/gcx
 
 go 1.23.0
 
