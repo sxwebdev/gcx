@@ -53,8 +53,8 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ github.actor }}/gcx:latest
             ${{ github.actor }}/gcx:${{ github.ref_name }}
+            ${{ github.actor }}/gcx:latest
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
