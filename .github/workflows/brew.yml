@@ -1,9 +1,9 @@
 name: Homebrew Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+  release:
+    types: [published]
 
 jobs:
   release:
@@ -15,18 +15,19 @@ jobs:
 
       - name: Get version
         id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "VERSION=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            dist/*.tar.gz
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download Release Assets
+        run: |
+          mkdir -p dist
+          cd dist
+          curl -L -o gcx_${{ steps.get_version.outputs.VERSION }}_darwin_amd64.tar.gz https://github.com/sxwebdev/gcx/releases/download/${{ steps.get_version.outputs.VERSION }}/gcx_${{ steps.get_version.outputs.VERSION }}_darwin_amd64.tar.gz
+          curl -L -o gcx_${{ steps.get_version.outputs.VERSION }}_darwin_arm64.tar.gz https://github.com/sxwebdev/gcx/releases/download/${{ steps.get_version.outputs.VERSION }}/gcx_${{ steps.get_version.outputs.VERSION }}_darwin_arm64.tar.gz
 
       - name: Update Homebrew Formula
         uses: dawidd6/action-homebrew-bump-formula@v3
