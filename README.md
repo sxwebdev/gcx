@@ -19,10 +19,7 @@
 You can download the pre-built binary from the [releases](https://github.com/sxwebdev/gcx/releases) page or build it from source:
 
 ```bash
-# Install via Homebrew
-brew install sxwebdev/tap/gcx
-
-# Or install from source
+# Install from source
 go install github.com/sxwebdev/gcx@latest
 
 # Or build from source
