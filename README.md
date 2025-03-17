@@ -49,6 +49,7 @@ COMMANDS:
    build    Compiles binaries
    publish  Publishes artifacts based on the configuration
    deploy   Deploys artifacts based on the configuration
+   release  Release related commands
    git      Git related commands
    version  Displays the current version
    help, h  Shows a list of commands or help for one command
@@ -247,45 +248,44 @@ Error: command 'systemctl start myapp' failed: exit status 1
 
 Once installed, you can run the following commands:
 
-- **Build binaries:**
+```bash
+# Build binaries according to configuration
+gcx build
 
-  ```bash
-  gcx build --config gcx.yaml
-  ```
+# Publish artifacts to configured destinations
+gcx publish
 
-  This command:
+# Deploy artifacts using configured deployment settings
+gcx deploy
+gcx deploy --name production  # Deploy specific configuration
 
-  1. Runs pre-build hooks
-  2. Compiles binaries for specified targets
-  3. Creates archives if configured
-  4. Runs post-build hooks
-  5. Stores results in the output directory
+# Show current git tag version
+gcx git version
 
-- **Publish artifacts:**
+# Generate a changelog between current and previous git tags
+gcx release changelog
 
-  ```bash
-  gcx publish --config gcx.yaml
-  ```
+# Show gcx version information
+gcx version
+```
 
-  Uploads all files from the output directory to configured destinations (S3 or SSH).
+The changelog command generates a markdown-formatted list of changes between the current and previous git tags, including:
 
-- **Deploy:**
+- List of changes with commit messages
+- Author of each change
+- Short commit hash
+- Full changelog comparison URL
 
-  ```bash
-  # Deploy all configurations
-  gcx deploy --config gcx.yaml
+Example changelog output:
 
-  # Deploy specific configuration
-  gcx deploy --config gcx.yaml --name production
-  ```
+```markdown
+## What's Changed
 
-  Executes deployment commands on target servers via SSH.
+- Add new feature by @author in abc1234
+- Fix documentation by @another-author in def5678
 
-- **Show version:**
-
-  ```bash
-  gcx version
-  ```
+**Full Changelog**: https://github.com/user/repo/compare/v0.0.1...v0.0.2
+```
 
 ## GitLab CI/CD Integration Example
 
