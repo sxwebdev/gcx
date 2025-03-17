@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/containrrr/shoutrrr"
 	"github.com/joho/godotenv"
@@ -50,13 +51,15 @@ type HooksConfig struct {
 }
 
 type BuildConfig struct {
-	Main    string   `yaml:"main"`
-	Env     []string `yaml:"env,omitempty"`
-	Goos    []string `yaml:"goos,omitempty"`
-	Goarch  []string `yaml:"goarch,omitempty"`
-	Goarm   []string `yaml:"goarm,omitempty"`
-	Flags   []string `yaml:"flags,omitempty"`
-	Ldflags []string `yaml:"ldflags,omitempty"`
+	Main                  string   `yaml:"main"`
+	OutputName            string   `yaml:"output_name,omitempty"`
+	DisablePlatformSuffix bool     `yaml:"disable_platform_suffix,omitempty"`
+	Goos                  []string `yaml:"goos"`
+	Goarch                []string `yaml:"goarch"`
+	Goarm                 []string `yaml:"goarm,omitempty"`
+	Flags                 []string `yaml:"flags,omitempty"`
+	Ldflags               []string `yaml:"ldflags,omitempty"`
+	Env                   []string `yaml:"env,omitempty"`
 }
 
 type ArchiveConfig struct {
@@ -326,6 +329,17 @@ func getGitChangelog(from, to string) (string, error) {
 	return sb.String(), nil
 }
 
+// getGitCommitHash returns the current git commit hash
+func getGitCommitHash() string {
+	cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		log.Printf("Failed to get git commit hash: %v. Using default value 'none'", err)
+		return "none"
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // buildBinaries performs cross-compilation of binaries according to the configuration.
 func buildBinaries(cfg *Config) error {
 	// Execute hooks (e.g., "go mod tidy")
@@ -353,11 +367,51 @@ func buildBinaries(cfg *Config) error {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
+	// Get current git tag and commit hash for ldflags
+	currentTag := getGitTag()
+	commitHash := getGitCommitHash()
+	buildDate := time.Now().Format(time.RFC3339)
+
 	// For each build configuration
 	for _, buildCfg := range cfg.Builds {
-		// Determine the binary name from the last element of the path (e.g., "./cmd/rovercore" → "rovercore")
-		parts := strings.Split(buildCfg.Main, "/")
-		binaryBase := parts[len(parts)-1]
+		// Determine the binary name
+		var binaryBase string
+		if buildCfg.OutputName != "" {
+			binaryBase = buildCfg.OutputName
+		} else {
+			// Use the last element of the path
+			parts := strings.Split(buildCfg.Main, "/")
+			binaryBase = parts[len(parts)-1]
+		}
+
+		// Determine if we should add platform suffix
+		usePlatformSuffix := !buildCfg.DisablePlatformSuffix
+
+		// Process ldflags templates
+		var processedLdflags []string
+		for _, ldflag := range buildCfg.Ldflags {
+			tmpl, err := template.New("ldflag").Parse(ldflag)
+			if err != nil {
+				return fmt.Errorf("failed to parse ldflag template '%s': %w", ldflag, err)
+			}
+
+			var buf strings.Builder
+			data := struct {
+				Version string
+				Commit  string
+				Date    string
+			}{
+				Version: currentTag,
+				Commit:  commitHash,
+				Date:    buildDate,
+			}
+
+			if err := tmpl.Execute(&buf, data); err != nil {
+				return fmt.Errorf("failed to execute ldflag template '%s': %w", ldflag, err)
+			}
+
+			processedLdflags = append(processedLdflags, buf.String())
+		}
 
 		// Iterate over all combinations of GOOS and GOARCH
 		for _, goos := range buildCfg.Goos {
@@ -372,11 +426,16 @@ func buildBinaries(cfg *Config) error {
 						envs := os.Environ()
 						envs = append(envs, "GOOS="+goos, "GOARCH="+goarch, "GOARM="+goarm)
 						envs = append(envs, buildCfg.Env...)
-						outputName := fmt.Sprintf("%s/%s_%s_%s_arm%s", outDir, binaryBase, goos, goarch, goarm)
+						var outputName string
+						if usePlatformSuffix {
+							outputName = fmt.Sprintf("%s/%s_%s_%s_%s", outDir, binaryBase, goos, goarch, goarm)
+						} else {
+							outputName = fmt.Sprintf("%s/%s", outDir, binaryBase)
+						}
 						args := []string{"build"}
 						args = append(args, buildCfg.Flags...)
-						if len(buildCfg.Ldflags) > 0 {
-							args = append(args, "-ldflags", strings.Join(buildCfg.Ldflags, " "))
+						if len(processedLdflags) > 0 {
+							args = append(args, "-ldflags", strings.Join(processedLdflags, " "))
 						}
 						args = append(args, "-o", outputName, buildCfg.Main)
 						log.Printf("Building %s for %s/%s arm%s...", binaryBase, goos, goarch, goarm)
@@ -392,11 +451,16 @@ func buildBinaries(cfg *Config) error {
 					envs := os.Environ()
 					envs = append(envs, "GOOS="+goos, "GOARCH="+goarch)
 					envs = append(envs, buildCfg.Env...)
-					outputName := fmt.Sprintf("%s/%s_%s_%s", outDir, binaryBase, goos, goarch)
+					var outputName string
+					if usePlatformSuffix {
+						outputName = fmt.Sprintf("%s/%s_%s_%s", outDir, binaryBase, goos, goarch)
+					} else {
+						outputName = fmt.Sprintf("%s/%s", outDir, binaryBase)
+					}
 					args := []string{"build"}
 					args = append(args, buildCfg.Flags...)
-					if len(buildCfg.Ldflags) > 0 {
-						args = append(args, "-ldflags", strings.Join(buildCfg.Ldflags, " "))
+					if len(processedLdflags) > 0 {
+						args = append(args, "-ldflags", strings.Join(processedLdflags, " "))
 					}
 					args = append(args, "-o", outputName, buildCfg.Main)
 					log.Printf("Building %s for %s/%s...", binaryBase, goos, goarch)

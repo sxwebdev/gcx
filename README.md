@@ -98,6 +98,8 @@ after:
 # Build configuration
 builds:
   - main: ./cmd/myapp
+    output_name: myapp
+    disable_platform_suffix: false
     env:
       - CGO_ENABLED=0
     goos:
@@ -109,7 +111,11 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}}
+      - -s
+      - -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.buildDate={{.Date}}
 
 # Archive configuration
 archives:
@@ -313,6 +319,8 @@ version: 1
 out_dir: dist
 builds:
   - main: ./cmd/app
+    output_name: myapp
+    disable_platform_suffix: false
     goos:
       - linux
     goarch:
