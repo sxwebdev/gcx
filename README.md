@@ -18,20 +18,27 @@
 
 You can download the pre-built binary from the [releases](https://github.com/sxwebdev/gcx/releases) page or build it from source:
 
+### Install from source
+
 ```bash
-# Install from source
 go install github.com/sxwebdev/gcx@latest
+```
 
-# Or build from source
-git clone https://github.com/sxwebdev/gcx.git
-cd gcx
-make build
+### Install via script
 
-# Or install via script
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/sxwebdev/gcx/refs/heads/master/scripts/install.sh)"
 ```
 
-Alternatively, you can use the Docker image available on Docker Hub:
+### Build from source
+
+```bash
+git clone https://github.com/sxwebdev/gcx.git
+cd gcx
+make build
+```
+
+### Use Docker Hub
 
 ```bash
 docker pull sxwebdev/gcx:latest
