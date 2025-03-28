@@ -26,6 +26,9 @@ go install github.com/sxwebdev/gcx@latest
 git clone https://github.com/sxwebdev/gcx.git
 cd gcx
 make build
+
+# Or install via script
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/sxwebdev/gcx/refs/heads/master/scripts/install.sh)"
 ```
 
 Alternatively, you can use the Docker image available on Docker Hub:
