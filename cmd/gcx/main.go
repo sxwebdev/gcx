@@ -309,10 +309,15 @@ func getGitChangelog(from, to string) (string, error) {
 		repoURL = strings.Replace(repoURL, "git@", "https://", 1)
 	}
 
+	// If previous tag is not set, return empty changelog without error
+	if from == "0.0.0" || from == "" {
+		return "", nil
+	}
+
 	// Get all commits between tags
 	cmd := exec.Command("git", "log",
-		"--pretty=format:* %s by @%an in %h", // Format each commit as a markdown list item with author and short hash
-		fmt.Sprintf("%s..%s", from, to))      // From older to newer tag
+		"--pretty=format:* %s by @%an in %h",
+		fmt.Sprintf("%s..%s", from, to))
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to get git log: %w", err)
