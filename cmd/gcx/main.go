@@ -23,6 +23,7 @@ import (
 	"github.com/melbahja/goph"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/sxwebdev/gcx/internal/helpers"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 )
@@ -77,6 +78,7 @@ type ArchiveTemplateData struct {
 
 type BlobConfig struct {
 	Provider string `yaml:"provider"`
+	Name     string `yaml:"name"`
 	// S3 config fields
 	Bucket   string `yaml:"bucket,omitempty"`
 	Region   string `yaml:"region,omitempty"`
@@ -96,6 +98,7 @@ type DeployConfig struct {
 	Server   string   `yaml:"server,omitempty"`
 	User     string   `yaml:"user,omitempty"`
 	KeyPath  string   `yaml:"key_path,omitempty"`
+	KeyRaw   string   `yaml:"key_raw,omitempty"`
 	Commands []string `yaml:"commands"`
 	// Alert configuration
 	Alerts AlertConfig `yaml:"alerts,omitempty"`
@@ -128,11 +131,12 @@ func (c *BlobConfig) ToS3Config() *S3Config {
 }
 
 // ToSSHConfig converts BlobConfig to SSHConfig if provider is ssh
-func (c *BlobConfig) ToSSHConfig() *SSHConfig {
+func (c *BlobConfig) ToSSHConfig() *SSHPublishConfig {
 	if c.Provider != "ssh" {
 		return nil
 	}
-	return &SSHConfig{
+	return &SSHPublishConfig{
+		Name:      c.Name,
 		Server:    c.Server,
 		User:      c.User,
 		KeyPath:   c.KeyPath,
@@ -162,11 +166,36 @@ type S3Config struct {
 	Endpoint  string
 }
 
-type SSHConfig struct {
+type SSHPublishConfig struct {
+	Name      string
 	Server    string
 	User      string
 	KeyPath   string
+	KeyRaw    string
 	Directory string
+}
+
+// Validate checks if the SSHConfig is valid
+func (c *SSHPublishConfig) Validate() error {
+	if c.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if c.Server == "" {
+		return fmt.Errorf("server is required")
+	}
+	if c.User == "" {
+		return fmt.Errorf("user is required")
+	}
+	if c.KeyPath == "" && c.KeyRaw == "" {
+		return fmt.Errorf("either key_path or key_raw is required")
+	}
+	if c.KeyPath != "" && c.KeyRaw != "" {
+		return fmt.Errorf("only one of key_path or key_raw should be provided")
+	}
+	if c.Directory == "" {
+		return fmt.Errorf("directory is required")
+	}
+	return nil
 }
 
 // Internal config types for type safety
@@ -175,7 +204,31 @@ type SSHDeployConfig struct {
 	Server   string
 	User     string
 	KeyPath  string
+	KeyRaw   string
 	Commands []string
+}
+
+// Validate checks if the SSHCSSHDeployConfigonfig is valid
+func (c *SSHDeployConfig) Validate() error {
+	if c.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if c.Server == "" {
+		return fmt.Errorf("server is required")
+	}
+	if c.User == "" {
+		return fmt.Errorf("user is required")
+	}
+	if c.KeyPath == "" && c.KeyRaw == "" {
+		return fmt.Errorf("either key_path or key_raw is required")
+	}
+	if c.KeyPath != "" && c.KeyRaw != "" {
+		return fmt.Errorf("only one of key_path or key_raw should be provided")
+	}
+	if len(c.Commands) == 0 {
+		return fmt.Errorf("at least one command is required")
+	}
+	return nil
 }
 
 // loadConfig reads the YAML configuration from the specified file.
@@ -521,7 +574,7 @@ func buildBinaries(cfg *Config) error {
 }
 
 // publishArtifacts uploads artifacts to configured destinations
-func publishArtifacts(cfg *Config) error {
+func publishArtifacts(cfg *Config, publishName string) error {
 	// Determine the artifacts directory (default is "dist")
 	artifactsDir := cfg.OutDir
 	if artifactsDir == "" {
@@ -535,8 +588,29 @@ func publishArtifacts(cfg *Config) error {
 		"Version": tag,
 	}
 
+	var blobs []BlobConfig
+
+	// If publishName is specified, execute only that publish
+	if publishName != "" {
+		var found bool
+		for _, config := range cfg.Blobs {
+			if config.Name == publishName {
+				blobs = append(blobs, config)
+				found = true
+			}
+		}
+		if !found {
+			return fmt.Errorf("publish configuration '%s' not found", publishName)
+		}
+	} else {
+		// Otherwise, execute all publish configurations
+		blobs = cfg.Blobs
+	}
+
 	// Process each blob configuration
-	for _, blob := range cfg.Blobs {
+	for _, blob := range blobs {
+		fmt.Println("Publishing to:", blob.Name)
+
 		switch blob.Provider {
 		case "s3":
 			if err := publishToS3(blob.ToS3Config(), artifactsDir, tmplData); err != nil {
@@ -637,9 +711,14 @@ func publishToS3(cfg *S3Config, artifactsDir string, tmplData map[string]string)
 }
 
 // publishToSSH uploads artifacts to remote server via SSH
-func publishToSSH(cfg *SSHConfig, artifactsDir string, tmplData map[string]string) error {
+func publishToSSH(cfg *SSHPublishConfig, artifactsDir string, tmplData map[string]string) error {
 	if cfg == nil {
 		return fmt.Errorf("ssh configuration is required for ssh provider")
+	}
+
+	// Validate SSH configuration
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid SSH configuration: %w", err)
 	}
 
 	// Process template for the publish directory
@@ -654,9 +733,21 @@ func publishToSSH(cfg *SSHConfig, artifactsDir string, tmplData map[string]strin
 	remoteDir := dirBuffer.String()
 
 	// Create SSH client
-	auth, err := goph.Key(cfg.KeyPath, "")
-	if err != nil {
-		return fmt.Errorf("failed to load SSH key: %w", err)
+	var auth goph.Auth
+	if cfg.KeyRaw != "" {
+		auth, err = goph.RawKey(cfg.KeyRaw, "")
+		if err != nil {
+			return fmt.Errorf("failed to load SSH key: %w", err)
+		}
+	} else {
+		path, err := helpers.ExpandPath(cfg.KeyPath)
+		if err != nil {
+			return fmt.Errorf("failed to expand key path: %w", err)
+		}
+		auth, err = goph.Key(path, "")
+		if err != nil {
+			return fmt.Errorf("failed to load SSH key: %w", err)
+		}
 	}
 
 	client, err := goph.New(cfg.User, cfg.Server, auth)
@@ -952,6 +1043,11 @@ func executeSSHDeploy(cfg *SSHDeployConfig) error {
 		return fmt.Errorf("ssh configuration is required for ssh provider")
 	}
 
+	// Validate SSH configuration
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid SSH configuration: %w", err)
+	}
+
 	// Create SSH client
 	auth, err := goph.Key(cfg.KeyPath, "")
 	if err != nil {
@@ -1015,6 +1111,11 @@ func main() {
 						Usage:   "Path to the YAML configuration file",
 						Value:   "gcx.yaml",
 					},
+					&cli.StringFlag{
+						Name:    "name",
+						Aliases: []string{"n"},
+						Usage:   "Name of the publish configuration to execute",
+					},
 				},
 				Action: func(c *cli.Context) error {
 					configPath := c.String("config")
@@ -1022,7 +1123,7 @@ func main() {
 					if err != nil {
 						return fmt.Errorf("error loading configuration: %w", err)
 					}
-					return publishArtifacts(cfg)
+					return publishArtifacts(cfg, c.String("name"))
 				},
 			},
 			{

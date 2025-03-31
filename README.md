@@ -134,13 +134,15 @@ archives:
 # Artifact publishing configuration
 blobs:
   - provider: s3
+    name: s3-storage
     bucket: your-bucket-name
     directory: "releases/{{.Version}}"
     region: us-west-1
     endpoint: https://s3.example.com
 
   - provider: ssh
-    server: "storage.example.com"
+    name: stage-server
+    server: "stage.example.com"
     user: "deployer"
     key_path: "~/.ssh/deploy_key"
     directory: "/var/www/releases/{{.Version}}"
