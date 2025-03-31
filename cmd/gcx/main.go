@@ -25,6 +25,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/sxwebdev/gcx/internal/helpers"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
 )
 
@@ -753,7 +754,14 @@ func publishToSSH(cfg *SSHPublishConfig, artifactsDir string, tmplData map[strin
 		}
 	}
 
-	client, err := goph.New(cfg.User, cfg.Server, auth)
+	client, err := goph.NewConn(&goph.Config{
+		Auth:     auth,
+		User:     cfg.User,
+		Addr:     cfg.Server,
+		Port:     22,
+		Timeout:  goph.DefaultTimeout,
+		Callback: ssh.InsecureIgnoreHostKey(),
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create SSH client: %w", err)
 	}
