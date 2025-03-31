@@ -21,7 +21,7 @@ You can download the pre-built binary from the [releases](https://github.com/sxw
 ### Install from source
 
 ```bash
-go install github.com/sxwebdev/gcx@latest
+go install github.com/sxwebdev/gcx/cmd/gcx@latest
 ```
 
 ### Install via script

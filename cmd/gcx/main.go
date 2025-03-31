@@ -744,6 +744,9 @@ func publishToSSH(cfg *SSHPublishConfig, artifactsDir string, tmplData map[strin
 		if err != nil {
 			return fmt.Errorf("failed to expand key path: %w", err)
 		}
+
+		fmt.Println("use key path:", path)
+
 		auth, err = goph.Key(path, "")
 		if err != nil {
 			return fmt.Errorf("failed to load SSH key: %w", err)
