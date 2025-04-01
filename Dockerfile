@@ -15,13 +15,11 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${DATE}" -v -o ./bin/gcx ./cmd/gcx
 
-# Final image based on Alpine with necessary packages.
-FROM golang:1.24-alpine
+FROM golang:1.24
 
 ENV GOTOOLCHAIN=auto
 ENV GOROOT=/usr/local/go
 
-RUN apk --no-cache add ca-certificates git gcc musl-dev mercurial
 WORKDIR /app
 COPY --from=builder /app/bin/gcx /usr/bin/
 
