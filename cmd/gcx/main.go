@@ -732,6 +732,43 @@ func publishToSSH(cfg *SSHPublishConfig, artifactsDir string, tmplData map[strin
 	}
 	remoteDir := dirBuffer.String()
 
+	// Check if known_hosts file exists and create it if it doesn't
+	knownHostsPath, err := helpers.ExpandPath("~/.ssh/known_hosts")
+	if err != nil {
+		return fmt.Errorf("failed to expand known hosts path: %w", err)
+	}
+
+	if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
+		// Create ~/.ssh directory if it doesn't exist
+		sshDir := filepath.Dir(knownHostsPath)
+		if err := os.MkdirAll(sshDir, 0o700); err != nil {
+			return fmt.Errorf("failed to create .ssh directory: %w", err)
+		}
+
+		// Create empty known_hosts file
+		if err := os.WriteFile(knownHostsPath, []byte{}, 0o600); err != nil {
+			return fmt.Errorf("failed to create known_hosts file: %w", err)
+		}
+
+		// Run ssh-keyscan to add the server to known_hosts
+		cmd := exec.Command("ssh-keyscan", "-H", cfg.Server)
+		output, err := cmd.Output()
+		if err != nil {
+			return fmt.Errorf("ssh-keyscan failed: %w", err)
+		}
+
+		// Append the output to the known_hosts file
+		f, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			return fmt.Errorf("failed to open known_hosts file: %w", err)
+		}
+		defer f.Close()
+
+		if _, err := f.Write(output); err != nil {
+			return fmt.Errorf("failed to write to known_hosts file: %w", err)
+		}
+	}
+
 	// Create SSH client
 	var auth goph.Auth
 	if cfg.KeyRaw != "" {
