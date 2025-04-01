@@ -1,5 +1,5 @@
 # Dockerfile
-FROM golang:1.24 AS builder
+FROM golang:1.24-bullseye AS builder
 WORKDIR /app
 
 # Define build arguments for version, commit, and date.
