@@ -740,8 +740,10 @@ func publishToSSH(cfg *SSHPublishConfig, artifactsDir string, tmplData map[strin
 	remoteDir := dirBuffer.String()
 
 	// Check if known_hosts file exists and create it if it doesn't
-	if err := checkKnonwnHost(cfg.Server); err != nil {
-		return fmt.Errorf("failed to check known_hosts file: %w", err)
+	if !cfg.InsecureIgnoreHostKey {
+		if err := checkKnonwnHost(cfg.Server); err != nil {
+			return fmt.Errorf("failed to check known_hosts file: %w", err)
+		}
 	}
 
 	// Create SSH client
@@ -1070,8 +1072,10 @@ func executeSSHDeploy(cfg *SSHDeployConfig) error {
 	}
 
 	// Check if known_hosts file exists and create it if it doesn't
-	if err := checkKnonwnHost(cfg.Server); err != nil {
-		return fmt.Errorf("failed to check known_hosts file: %w", err)
+	if !cfg.InsecureIgnoreHostKey {
+		if err := checkKnonwnHost(cfg.Server); err != nil {
+			return fmt.Errorf("failed to check known_hosts file: %w", err)
+		}
 	}
 
 	// Create SSH client
