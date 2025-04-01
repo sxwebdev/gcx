@@ -23,6 +23,7 @@ import (
 	"github.com/melbahja/goph"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/sxwebdev/gcx/internal/helpers"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 )
@@ -77,14 +78,16 @@ type ArchiveTemplateData struct {
 
 type BlobConfig struct {
 	Provider string `yaml:"provider"`
+	Name     string `yaml:"name"`
 	// S3 config fields
 	Bucket   string `yaml:"bucket,omitempty"`
 	Region   string `yaml:"region,omitempty"`
 	Endpoint string `yaml:"endpoint,omitempty"`
 	// SSH config fields
-	Server  string `yaml:"server,omitempty"`
-	User    string `yaml:"user,omitempty"`
-	KeyPath string `yaml:"key_path,omitempty"`
+	Server                string `yaml:"server,omitempty"`
+	User                  string `yaml:"user,omitempty"`
+	KeyPath               string `yaml:"key_path,omitempty"`
+	InsecureIgnoreHostKey bool   `yaml:"insecure_ignore_host_key,omitempty"`
 	// Common fields
 	Directory string `yaml:"directory"`
 }
@@ -93,10 +96,12 @@ type DeployConfig struct {
 	Name     string `yaml:"name"`
 	Provider string `yaml:"provider"`
 	// SSH config fields
-	Server   string   `yaml:"server,omitempty"`
-	User     string   `yaml:"user,omitempty"`
-	KeyPath  string   `yaml:"key_path,omitempty"`
-	Commands []string `yaml:"commands"`
+	Server                string   `yaml:"server,omitempty"`
+	User                  string   `yaml:"user,omitempty"`
+	KeyPath               string   `yaml:"key_path,omitempty"`
+	KeyRaw                string   `yaml:"key_raw,omitempty"`
+	InsecureIgnoreHostKey bool     `yaml:"insecure_ignore_host_key,omitempty"`
+	Commands              []string `yaml:"commands"`
 	// Alert configuration
 	Alerts AlertConfig `yaml:"alerts,omitempty"`
 }
@@ -128,15 +133,17 @@ func (c *BlobConfig) ToS3Config() *S3Config {
 }
 
 // ToSSHConfig converts BlobConfig to SSHConfig if provider is ssh
-func (c *BlobConfig) ToSSHConfig() *SSHConfig {
+func (c *BlobConfig) ToSSHConfig() *SSHPublishConfig {
 	if c.Provider != "ssh" {
 		return nil
 	}
-	return &SSHConfig{
-		Server:    c.Server,
-		User:      c.User,
-		KeyPath:   c.KeyPath,
-		Directory: c.Directory,
+	return &SSHPublishConfig{
+		Name:                  c.Name,
+		Server:                c.Server,
+		User:                  c.User,
+		KeyPath:               c.KeyPath,
+		InsecureIgnoreHostKey: c.InsecureIgnoreHostKey,
+		Directory:             c.Directory,
 	}
 }
 
@@ -146,11 +153,13 @@ func (c *DeployConfig) ToSSHDeployConfig() *SSHDeployConfig {
 		return nil
 	}
 	return &SSHDeployConfig{
-		Name:     c.Name,
-		Server:   c.Server,
-		User:     c.User,
-		KeyPath:  c.KeyPath,
-		Commands: c.Commands,
+		Name:                  c.Name,
+		Server:                c.Server,
+		User:                  c.User,
+		KeyPath:               c.KeyPath,
+		KeyRaw:                c.KeyRaw,
+		InsecureIgnoreHostKey: c.InsecureIgnoreHostKey,
+		Commands:              c.Commands,
 	}
 }
 
@@ -162,20 +171,71 @@ type S3Config struct {
 	Endpoint  string
 }
 
-type SSHConfig struct {
-	Server    string
-	User      string
-	KeyPath   string
-	Directory string
+type SSHPublishConfig struct {
+	Name                  string
+	Server                string
+	User                  string
+	KeyPath               string
+	KeyRaw                string
+	InsecureIgnoreHostKey bool
+	Directory             string
+}
+
+// Validate checks if the SSHConfig is valid
+func (c *SSHPublishConfig) Validate() error {
+	if c.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if c.Server == "" {
+		return fmt.Errorf("server is required")
+	}
+	if c.User == "" {
+		return fmt.Errorf("user is required")
+	}
+	if c.KeyPath == "" && c.KeyRaw == "" {
+		return fmt.Errorf("either key_path or key_raw is required")
+	}
+	if c.KeyPath != "" && c.KeyRaw != "" {
+		return fmt.Errorf("only one of key_path or key_raw should be provided")
+	}
+	if c.Directory == "" {
+		return fmt.Errorf("directory is required")
+	}
+	return nil
 }
 
 // Internal config types for type safety
 type SSHDeployConfig struct {
-	Name     string
-	Server   string
-	User     string
-	KeyPath  string
-	Commands []string
+	Name                  string
+	Server                string
+	User                  string
+	KeyPath               string
+	KeyRaw                string
+	InsecureIgnoreHostKey bool
+	Commands              []string
+}
+
+// Validate checks if the SSHCSSHDeployConfigonfig is valid
+func (c *SSHDeployConfig) Validate() error {
+	if c.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if c.Server == "" {
+		return fmt.Errorf("server is required")
+	}
+	if c.User == "" {
+		return fmt.Errorf("user is required")
+	}
+	if c.KeyPath == "" && c.KeyRaw == "" {
+		return fmt.Errorf("either key_path or key_raw is required")
+	}
+	if c.KeyPath != "" && c.KeyRaw != "" {
+		return fmt.Errorf("only one of key_path or key_raw should be provided")
+	}
+	if len(c.Commands) == 0 {
+		return fmt.Errorf("at least one command is required")
+	}
+	return nil
 }
 
 // loadConfig reads the YAML configuration from the specified file.
@@ -521,7 +581,7 @@ func buildBinaries(cfg *Config) error {
 }
 
 // publishArtifacts uploads artifacts to configured destinations
-func publishArtifacts(cfg *Config) error {
+func publishArtifacts(cfg *Config, publishName string) error {
 	// Determine the artifacts directory (default is "dist")
 	artifactsDir := cfg.OutDir
 	if artifactsDir == "" {
@@ -535,8 +595,29 @@ func publishArtifacts(cfg *Config) error {
 		"Version": tag,
 	}
 
+	var blobs []BlobConfig
+
+	// If publishName is specified, execute only that publish
+	if publishName != "" {
+		var found bool
+		for _, config := range cfg.Blobs {
+			if config.Name == publishName {
+				blobs = append(blobs, config)
+				found = true
+			}
+		}
+		if !found {
+			return fmt.Errorf("publish configuration '%s' not found", publishName)
+		}
+	} else {
+		// Otherwise, execute all publish configurations
+		blobs = cfg.Blobs
+	}
+
 	// Process each blob configuration
-	for _, blob := range cfg.Blobs {
+	for _, blob := range blobs {
+		fmt.Println("Publishing to:", blob.Name)
+
 		switch blob.Provider {
 		case "s3":
 			if err := publishToS3(blob.ToS3Config(), artifactsDir, tmplData); err != nil {
@@ -637,9 +718,14 @@ func publishToS3(cfg *S3Config, artifactsDir string, tmplData map[string]string)
 }
 
 // publishToSSH uploads artifacts to remote server via SSH
-func publishToSSH(cfg *SSHConfig, artifactsDir string, tmplData map[string]string) error {
+func publishToSSH(cfg *SSHPublishConfig, artifactsDir string, tmplData map[string]string) error {
 	if cfg == nil {
 		return fmt.Errorf("ssh configuration is required for ssh provider")
+	}
+
+	// Validate SSH configuration
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid SSH configuration: %w", err)
 	}
 
 	// Process template for the publish directory
@@ -653,15 +739,73 @@ func publishToSSH(cfg *SSHConfig, artifactsDir string, tmplData map[string]strin
 	}
 	remoteDir := dirBuffer.String()
 
-	// Create SSH client
-	auth, err := goph.Key(cfg.KeyPath, "")
+	// Check if known_hosts file exists and create it if it doesn't
+	knownHostsPath, err := helpers.ExpandPath("~/.ssh/known_hosts")
 	if err != nil {
-		return fmt.Errorf("failed to load SSH key: %w", err)
+		return fmt.Errorf("failed to expand known hosts path: %w", err)
 	}
 
-	client, err := goph.New(cfg.User, cfg.Server, auth)
-	if err != nil {
-		return fmt.Errorf("failed to create SSH client: %w", err)
+	if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
+		// Create ~/.ssh directory if it doesn't exist
+		sshDir := filepath.Dir(knownHostsPath)
+		if err := os.MkdirAll(sshDir, 0o700); err != nil {
+			return fmt.Errorf("failed to create .ssh directory: %w", err)
+		}
+
+		// Create empty known_hosts file
+		if err := os.WriteFile(knownHostsPath, []byte{}, 0o600); err != nil {
+			return fmt.Errorf("failed to create known_hosts file: %w", err)
+		}
+
+		// Run ssh-keyscan to add the server to known_hosts
+		cmd := exec.Command("ssh-keyscan", "-H", cfg.Server)
+		output, err := cmd.Output()
+		if err != nil {
+			return fmt.Errorf("ssh-keyscan failed: %w", err)
+		}
+
+		// Append the output to the known_hosts file
+		f, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			return fmt.Errorf("failed to open known_hosts file: %w", err)
+		}
+		defer f.Close()
+
+		if _, err := f.Write(output); err != nil {
+			return fmt.Errorf("failed to write to known_hosts file: %w", err)
+		}
+	}
+
+	// Create SSH client
+	var auth goph.Auth
+	if cfg.KeyRaw != "" {
+		auth, err = goph.RawKey(cfg.KeyRaw, "")
+		if err != nil {
+			return fmt.Errorf("failed to load SSH key: %w", err)
+		}
+	} else {
+		path, err := helpers.ExpandPath(cfg.KeyPath)
+		if err != nil {
+			return fmt.Errorf("failed to expand key path: %w", err)
+		}
+
+		auth, err = goph.Key(path, "")
+		if err != nil {
+			return fmt.Errorf("failed to load SSH key: %w", err)
+		}
+	}
+
+	var client *goph.Client
+	if cfg.InsecureIgnoreHostKey {
+		client, err = goph.NewUnknown(cfg.User, cfg.Server, auth)
+		if err != nil {
+			return fmt.Errorf("failed to create insecure SSH client: %w", err)
+		}
+	} else {
+		client, err = goph.New(cfg.User, cfg.Server, auth)
+		if err != nil {
+			return fmt.Errorf("failed to create SSH client: %w", err)
+		}
 	}
 	defer client.Close()
 
@@ -952,15 +1096,42 @@ func executeSSHDeploy(cfg *SSHDeployConfig) error {
 		return fmt.Errorf("ssh configuration is required for ssh provider")
 	}
 
-	// Create SSH client
-	auth, err := goph.Key(cfg.KeyPath, "")
-	if err != nil {
-		return fmt.Errorf("failed to load SSH key: %w", err)
+	// Validate SSH configuration
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid SSH configuration: %w", err)
 	}
 
-	client, err := goph.New(cfg.User, cfg.Server, auth)
-	if err != nil {
-		return fmt.Errorf("failed to create SSH client: %w", err)
+	// Create SSH client
+	var auth goph.Auth
+	var err error
+	if cfg.KeyRaw != "" {
+		auth, err = goph.RawKey(cfg.KeyRaw, "")
+		if err != nil {
+			return fmt.Errorf("failed to load SSH key: %w", err)
+		}
+	} else {
+		path, err := helpers.ExpandPath(cfg.KeyPath)
+		if err != nil {
+			return fmt.Errorf("failed to expand key path: %w", err)
+		}
+
+		auth, err = goph.Key(path, "")
+		if err != nil {
+			return fmt.Errorf("failed to load SSH key: %w", err)
+		}
+	}
+
+	var client *goph.Client
+	if cfg.InsecureIgnoreHostKey {
+		client, err = goph.NewUnknown(cfg.User, cfg.Server, auth)
+		if err != nil {
+			return fmt.Errorf("failed to create insecure SSH client: %w", err)
+		}
+	} else {
+		client, err = goph.New(cfg.User, cfg.Server, auth)
+		if err != nil {
+			return fmt.Errorf("failed to create SSH client: %w", err)
+		}
 	}
 	defer client.Close()
 
@@ -1015,6 +1186,11 @@ func main() {
 						Usage:   "Path to the YAML configuration file",
 						Value:   "gcx.yaml",
 					},
+					&cli.StringFlag{
+						Name:    "name",
+						Aliases: []string{"n"},
+						Usage:   "Name of the publish configuration to execute",
+					},
 				},
 				Action: func(c *cli.Context) error {
 					configPath := c.String("config")
@@ -1022,7 +1198,7 @@ func main() {
 					if err != nil {
 						return fmt.Errorf("error loading configuration: %w", err)
 					}
-					return publishArtifacts(cfg)
+					return publishArtifacts(cfg, c.String("name"))
 				},
 			},
 			{

@@ -21,7 +21,7 @@ You can download the pre-built binary from the [releases](https://github.com/sxw
 ### Install from source
 
 ```bash
-go install github.com/sxwebdev/gcx@latest
+go install github.com/sxwebdev/gcx/cmd/gcx@latest
 ```
 
 ### Install via script
@@ -134,15 +134,18 @@ archives:
 # Artifact publishing configuration
 blobs:
   - provider: s3
+    name: s3-storage
     bucket: your-bucket-name
     directory: "releases/{{.Version}}"
     region: us-west-1
     endpoint: https://s3.example.com
 
   - provider: ssh
-    server: "storage.example.com"
+    name: stage-server
+    server: "stage.example.com"
     user: "deployer"
     key_path: "~/.ssh/deploy_key"
+    insecure_ignore_host_key: false
     directory: "/var/www/releases/{{.Version}}"
 
 # Deployment configuration
@@ -152,6 +155,7 @@ deploys:
     server: "prod.example.com"
     user: "deployer"
     key_path: "~/.ssh/deploy_key"
+    insecure_ignore_host_key: false
     commands:
       - systemctl stop myapp
       - cp /var/www/releases/myapp/latest/myapp /usr/local/bin/
@@ -169,6 +173,7 @@ deploys:
     server: "staging.example.com"
     user: "deployer"
     key_path: "~/.ssh/deploy_key"
+    insecure_ignore_host_key: true
     commands:
       - docker-compose -f /opt/myapp/docker-compose.yml down
       - cp /var/www/releases/myapp/latest/myapp /opt/myapp/
