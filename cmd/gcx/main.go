@@ -775,10 +775,10 @@ func publishToSSH(cfg *SSHPublishConfig, artifactsDir string, tmplData map[strin
 			continue
 		}
 		localFilePath := filepath.Join(artifactsDir, file.Name())
-		// remotePath := filepath.Join(remoteDir, file.Name())
-		log.Printf("Uploading %s to %s:%s", localFilePath, cfg.Server, remoteDir)
+		remotePath := filepath.Join(remoteDir, file.Name())
+		log.Printf("Uploading %s to %s:%s", localFilePath, cfg.Server, remotePath)
 
-		if err := client.Upload(localFilePath, remoteDir); err != nil {
+		if err := client.Upload(localFilePath, remotePath); err != nil {
 			return fmt.Errorf("failed to upload file %s: %w", localFilePath, err)
 		}
 	}
