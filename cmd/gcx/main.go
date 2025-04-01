@@ -789,8 +789,6 @@ func publishToSSH(cfg *SSHPublishConfig, artifactsDir string, tmplData map[strin
 			return fmt.Errorf("failed to expand key path: %w", err)
 		}
 
-		fmt.Println("use key path:", path)
-
 		auth, err = goph.Key(path, "")
 		if err != nil {
 			return fmt.Errorf("failed to load SSH key: %w", err)
@@ -1104,14 +1102,36 @@ func executeSSHDeploy(cfg *SSHDeployConfig) error {
 	}
 
 	// Create SSH client
-	auth, err := goph.Key(cfg.KeyPath, "")
-	if err != nil {
-		return fmt.Errorf("failed to load SSH key: %w", err)
+	var auth goph.Auth
+	var err error
+	if cfg.KeyRaw != "" {
+		auth, err = goph.RawKey(cfg.KeyRaw, "")
+		if err != nil {
+			return fmt.Errorf("failed to load SSH key: %w", err)
+		}
+	} else {
+		path, err := helpers.ExpandPath(cfg.KeyPath)
+		if err != nil {
+			return fmt.Errorf("failed to expand key path: %w", err)
+		}
+
+		auth, err = goph.Key(path, "")
+		if err != nil {
+			return fmt.Errorf("failed to load SSH key: %w", err)
+		}
 	}
 
-	client, err := goph.New(cfg.User, cfg.Server, auth)
-	if err != nil {
-		return fmt.Errorf("failed to create SSH client: %w", err)
+	var client *goph.Client
+	if cfg.InsecureIgnoreHostKey {
+		client, err = goph.NewUnknown(cfg.User, cfg.Server, auth)
+		if err != nil {
+			return fmt.Errorf("failed to create insecure SSH client: %w", err)
+		}
+	} else {
+		client, err = goph.New(cfg.User, cfg.Server, auth)
+		if err != nil {
+			return fmt.Errorf("failed to create SSH client: %w", err)
+		}
 	}
 	defer client.Close()
 
