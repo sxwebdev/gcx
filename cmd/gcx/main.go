@@ -84,9 +84,10 @@ type BlobConfig struct {
 	Region   string `yaml:"region,omitempty"`
 	Endpoint string `yaml:"endpoint,omitempty"`
 	// SSH config fields
-	Server  string `yaml:"server,omitempty"`
-	User    string `yaml:"user,omitempty"`
-	KeyPath string `yaml:"key_path,omitempty"`
+	Server                string `yaml:"server,omitempty"`
+	User                  string `yaml:"user,omitempty"`
+	KeyPath               string `yaml:"key_path,omitempty"`
+	InsecureIgnoreHostKey bool   `yaml:"insecure_ignore_host_key,omitempty"`
 	// Common fields
 	Directory string `yaml:"directory"`
 }
@@ -95,11 +96,12 @@ type DeployConfig struct {
 	Name     string `yaml:"name"`
 	Provider string `yaml:"provider"`
 	// SSH config fields
-	Server   string   `yaml:"server,omitempty"`
-	User     string   `yaml:"user,omitempty"`
-	KeyPath  string   `yaml:"key_path,omitempty"`
-	KeyRaw   string   `yaml:"key_raw,omitempty"`
-	Commands []string `yaml:"commands"`
+	Server                string   `yaml:"server,omitempty"`
+	User                  string   `yaml:"user,omitempty"`
+	KeyPath               string   `yaml:"key_path,omitempty"`
+	KeyRaw                string   `yaml:"key_raw,omitempty"`
+	InsecureIgnoreHostKey bool     `yaml:"insecure_ignore_host_key,omitempty"`
+	Commands              []string `yaml:"commands"`
 	// Alert configuration
 	Alerts AlertConfig `yaml:"alerts,omitempty"`
 }
@@ -136,11 +138,12 @@ func (c *BlobConfig) ToSSHConfig() *SSHPublishConfig {
 		return nil
 	}
 	return &SSHPublishConfig{
-		Name:      c.Name,
-		Server:    c.Server,
-		User:      c.User,
-		KeyPath:   c.KeyPath,
-		Directory: c.Directory,
+		Name:                  c.Name,
+		Server:                c.Server,
+		User:                  c.User,
+		KeyPath:               c.KeyPath,
+		InsecureIgnoreHostKey: c.InsecureIgnoreHostKey,
+		Directory:             c.Directory,
 	}
 }
 
@@ -150,11 +153,13 @@ func (c *DeployConfig) ToSSHDeployConfig() *SSHDeployConfig {
 		return nil
 	}
 	return &SSHDeployConfig{
-		Name:     c.Name,
-		Server:   c.Server,
-		User:     c.User,
-		KeyPath:  c.KeyPath,
-		Commands: c.Commands,
+		Name:                  c.Name,
+		Server:                c.Server,
+		User:                  c.User,
+		KeyPath:               c.KeyPath,
+		KeyRaw:                c.KeyRaw,
+		InsecureIgnoreHostKey: c.InsecureIgnoreHostKey,
+		Commands:              c.Commands,
 	}
 }
 
@@ -167,12 +172,13 @@ type S3Config struct {
 }
 
 type SSHPublishConfig struct {
-	Name      string
-	Server    string
-	User      string
-	KeyPath   string
-	KeyRaw    string
-	Directory string
+	Name                  string
+	Server                string
+	User                  string
+	KeyPath               string
+	KeyRaw                string
+	InsecureIgnoreHostKey bool
+	Directory             string
 }
 
 // Validate checks if the SSHConfig is valid
@@ -200,12 +206,13 @@ func (c *SSHPublishConfig) Validate() error {
 
 // Internal config types for type safety
 type SSHDeployConfig struct {
-	Name     string
-	Server   string
-	User     string
-	KeyPath  string
-	KeyRaw   string
-	Commands []string
+	Name                  string
+	Server                string
+	User                  string
+	KeyPath               string
+	KeyRaw                string
+	InsecureIgnoreHostKey bool
+	Commands              []string
 }
 
 // Validate checks if the SSHCSSHDeployConfigonfig is valid
@@ -790,9 +797,17 @@ func publishToSSH(cfg *SSHPublishConfig, artifactsDir string, tmplData map[strin
 		}
 	}
 
-	client, err := goph.New(cfg.User, cfg.Server, auth)
-	if err != nil {
-		return fmt.Errorf("failed to create SSH client: %w", err)
+	var client *goph.Client
+	if cfg.InsecureIgnoreHostKey {
+		client, err = goph.NewUnknown(cfg.User, cfg.Server, auth)
+		if err != nil {
+			return fmt.Errorf("failed to create insecure SSH client: %w", err)
+		}
+	} else {
+		client, err = goph.New(cfg.User, cfg.Server, auth)
+		if err != nil {
+			return fmt.Errorf("failed to create SSH client: %w", err)
+		}
 	}
 	defer client.Close()
 
