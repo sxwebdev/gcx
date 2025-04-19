@@ -11,10 +11,12 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
+	"syscall"
 	"text/template"
 	"time"
 
@@ -24,15 +26,15 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/sxwebdev/gcx/internal/helpers"
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 	"gopkg.in/yaml.v3"
 )
 
 // Version values can be set at build time using ldflags.
 var (
-	version   = "dev"
-	commit    = "none"
-	buildDate = ""
+	version    = "dev"
+	commitHash = "none"
+	buildDate  = "none"
 )
 
 // Config represents the configuration file structure (similar to GoReleaser configuration).
@@ -1167,10 +1169,13 @@ func checkKnonwnHost(server string) error {
 }
 
 func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGKILL)
+	defer cancel()
+
 	// Load environment variables from .env file, if it exists.
 	godotenv.Load()
 
-	app := &cli.App{
+	app := &cli.Command{
 		Name:  "gcx",
 		Usage: "A tool for cross-compiling and publishing Go binaries",
 		Commands: []*cli.Command{
@@ -1185,7 +1190,7 @@ func main() {
 						Value:   "gcx.yaml",
 					},
 				},
-				Action: func(c *cli.Context) error {
+				Action: func(_ context.Context, c *cli.Command) error {
 					configPath := c.String("config")
 					cfg, err := loadConfig(configPath)
 					if err != nil {
@@ -1210,7 +1215,7 @@ func main() {
 						Usage:   "Name of the publish configuration to execute",
 					},
 				},
-				Action: func(c *cli.Context) error {
+				Action: func(_ context.Context, c *cli.Command) error {
 					configPath := c.String("config")
 					cfg, err := loadConfig(configPath)
 					if err != nil {
@@ -1235,7 +1240,7 @@ func main() {
 						Usage:   "Name of the deploy configuration to execute",
 					},
 				},
-				Action: func(c *cli.Context) error {
+				Action: func(_ context.Context, c *cli.Command) error {
 					configPath := c.String("config")
 					cfg, err := loadConfig(configPath)
 					if err != nil {
@@ -1247,7 +1252,7 @@ func main() {
 			{
 				Name:  "release",
 				Usage: "Release related commands",
-				Subcommands: []*cli.Command{
+				Commands: []*cli.Command{
 					{
 						Name:  "changelog",
 						Usage: "Generate a changelog between the current and previous git tags",
@@ -1258,7 +1263,7 @@ func main() {
 								Usage:   "Compare with previous stable version (vX.Y.Z without pre-release suffix)",
 							},
 						},
-						Action: func(c *cli.Context) error {
+						Action: func(_ context.Context, c *cli.Command) error {
 							currentTag := getGitTag()
 							var previousTag string
 							if c.Bool("stable") {
@@ -1281,11 +1286,11 @@ func main() {
 			{
 				Name:  "git",
 				Usage: "Git related commands",
-				Subcommands: []*cli.Command{
+				Commands: []*cli.Command{
 					{
 						Name:  "version",
 						Usage: "Displays the current git tag version",
-						Action: func(c *cli.Context) error {
+						Action: func(_ context.Context, c *cli.Command) error {
 							tag := getGitTag()
 							fmt.Printf("Current git version: %s\n", tag)
 							return nil
@@ -1296,15 +1301,15 @@ func main() {
 			{
 				Name:  "version",
 				Usage: "Displays the current version",
-				Action: func(c *cli.Context) error {
-					fmt.Printf("gcx version: %s\ncommit: %s\nbuild date: %s\n", version, commit, buildDate)
+				Action: func(_ context.Context, c *cli.Command) error {
+					fmt.Printf("gcx version: %s\ncommit: %s\nbuild date: %s\n", version, commitHash, buildDate)
 					return nil
 				},
 			},
 			{
 				Name:  "config",
 				Usage: "Configuration related commands",
-				Subcommands: []*cli.Command{
+				Commands: []*cli.Command{
 					{
 						Name:  "init",
 						Usage: "Initialize a new gcx.yaml configuration file",
@@ -1340,7 +1345,7 @@ func main() {
 								Value:   "./cmd/app",
 							},
 						},
-						Action: func(c *cli.Context) error {
+						Action: func(_ context.Context, c *cli.Command) error {
 							configPath := c.String("config")
 							if _, err := os.Stat(configPath); err == nil && !c.Bool("force") {
 								return fmt.Errorf("%s already exists. Use --force / -f to overwrite", configPath)
@@ -1388,7 +1393,7 @@ func main() {
 		},
 	}
 
-	if err := app.Run(os.Args); err != nil {
+	if err := app.Run(ctx, os.Args); err != nil {
 		log.Fatal(err)
 	}
 }
