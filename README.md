@@ -53,7 +53,7 @@ NAME:
    gcx - A tool for cross-compiling and publishing Go binaries
 
 USAGE:
-   gcx [global options] command [command options]
+   gcx [global options] [command [command options]]
 
 COMMANDS:
    build    Compiles binaries
@@ -76,11 +76,10 @@ NAME:
    gcx git - Git related commands
 
 USAGE:
-   gcx git [command options]
+   gcx git [command [command options]]
 
 COMMANDS:
    version  Displays the current git tag version
-   help, h  Shows a list of commands or help for one command
 
 OPTIONS:
    --help, -h  show help
