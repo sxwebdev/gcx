@@ -79,8 +79,8 @@ tar -xzf "$ASSET_NAME" || {
 echo "Removing archive $ASSET_NAME..."
 rm "$ASSET_NAME"
 
-# Find the extracted binary file recursively, excluding the archive
-EXTRACTED_BINARY=$(find . -type f -name "${TARGET_BINARY}*" ! -name "*.tar.gz" | head -n 1)
+# Find the extracted binary file recursively in subdirectories
+EXTRACTED_BINARY=$(find . -type f -name "${TARGET_BINARY}" ! -name "*.tar.gz" | head -n 1)
 
 if [ -z "$EXTRACTED_BINARY" ]; then
   echo "Error: No binary file found after extraction."
@@ -88,12 +88,6 @@ if [ -z "$EXTRACTED_BINARY" ]; then
 fi
 
 echo "Extracted binary: $EXTRACTED_BINARY"
-
-# If the binary is in a subdirectory, move it to the current directory
-if [ "$(dirname "$EXTRACTED_BINARY")" != "." ]; then
-  mv "$EXTRACTED_BINARY" .
-  EXTRACTED_BINARY=$(basename "$EXTRACTED_BINARY")
-fi
 
 # Ensure the extracted file is executable
 if [ ! -x "$EXTRACTED_BINARY" ]; then
@@ -107,8 +101,8 @@ if [ ! -d "$INSTALL_DIR" ]; then
   exit 1
 fi
 
-echo "Renaming $EXTRACTED_BINARY to $TARGET_BINARY..."
-mv "$EXTRACTED_BINARY" "$TARGET_BINARY"
+# Copy the binary to a temporary location for installation
+cp "$EXTRACTED_BINARY" "$TARGET_BINARY"
 
 if [ -f "$INSTALL_DIR/$TARGET_BINARY" ]; then
   echo "Removing existing binary from $INSTALL_DIR..."
@@ -120,5 +114,12 @@ sudo mv "$TARGET_BINARY" "$INSTALL_DIR/$TARGET_BINARY"
 
 echo "Making the binary executable..."
 sudo chmod +x "$INSTALL_DIR/$TARGET_BINARY"
+
+# Clean up extracted files
+echo "Cleaning up extracted files..."
+EXTRACTED_DIR=$(dirname "$EXTRACTED_BINARY")
+if [ "$EXTRACTED_DIR" != "." ]; then
+  rm -rf "$EXTRACTED_DIR"
+fi
 
 echo "Installation complete. You can now run $TARGET_BINARY from the terminal."

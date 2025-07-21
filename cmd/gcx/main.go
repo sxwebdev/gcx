@@ -27,6 +27,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/sxwebdev/gcx/internal/helpers"
 	"github.com/urfave/cli/v3"
+	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 )
 
@@ -407,6 +408,24 @@ func getGitCommitHash() string {
 	return strings.TrimSpace(string(out))
 }
 
+// getOutputFilename returns the output filename based on the configuration and platform.
+func getOutputFilename(
+	usePlatformSuffix bool,
+	outDir, binaryBase, version, goos, goarch, goarm string,
+) string {
+	var outputName string
+	if usePlatformSuffix {
+		if goarch == "arm" && goarm != "" {
+			outputName = fmt.Sprintf("%s/%s_%s_%s_%s_%s/%s", outDir, binaryBase, version, goos, goarch, goarm, binaryBase)
+		} else {
+			outputName = fmt.Sprintf("%s/%s_%s_%s_%s/%s", outDir, binaryBase, version, goos, goarch, binaryBase)
+		}
+	} else {
+		outputName = fmt.Sprintf("%s/%s_%s/%s", outDir, binaryBase, version, binaryBase)
+	}
+	return outputName
+}
+
 // buildBinaries performs cross-compilation of binaries according to the configuration.
 func buildBinaries(cfg *Config) error {
 	// Execute hooks (e.g., "go mod tidy")
@@ -504,32 +523,57 @@ func buildBinaries(cfg *Config) error {
 			processedLdflags = append(processedLdflags, buf.String())
 		}
 
+		eg := errgroup.Group{}
+		eg.SetLimit(runtime.NumCPU())
+
+		log.Printf("Use %d CPU cores for building...\n", runtime.NumCPU())
+
 		// Iterate over all combinations of GOOS and GOARCH
 		for _, goos := range buildCfg.Goos {
-			for _, goarch := range buildCfg.Goarch {
-				// If the architecture is arm and OS is not linux, skip build
-				if goarch == "arm" && goos != "linux" {
-					continue
-				}
-				// If architecture is arm and goarm parameters are provided, iterate over them
-				if goarch == "arm" && len(buildCfg.Goarm) > 0 {
-					for _, goarm := range buildCfg.Goarm {
-						envs := os.Environ()
-						envs = append(envs, "GOOS="+goos, "GOARCH="+goarch, "GOARM="+goarm)
-						envs = append(envs, buildCfg.Env...)
-						var outputName string
-						if usePlatformSuffix {
-							outputName = fmt.Sprintf("%s/%s_%s_%s_%s", outDir, binaryBase, goos, goarch, goarm)
-						} else {
-							outputName = fmt.Sprintf("%s/%s", outDir, binaryBase)
+			eg.Go(func() error {
+				for _, goarch := range buildCfg.Goarch {
+					// If the architecture is arm and OS is not linux, skip build
+					if goarch == "arm" && goos != "linux" {
+						continue
+					}
+					// If architecture is arm and goarm parameters are provided, iterate over them
+					if goarch == "arm" && len(buildCfg.Goarm) > 0 {
+						for _, goarm := range buildCfg.Goarm {
+							envs := os.Environ()
+							envs = append(envs, "GOOS="+goos, "GOARCH="+goarch, "GOARM="+goarm)
+							envs = append(envs, buildCfg.Env...)
+							outputName := getOutputFilename(
+								usePlatformSuffix, outDir, binaryBase, currentTag, goos, goarch, goarm,
+							)
+							args := []string{"build"}
+							args = append(args, buildCfg.Flags...)
+							if len(processedLdflags) > 0 {
+								args = append(args, "-ldflags", strings.Join(processedLdflags, " "))
+							}
+							args = append(args, "-o", outputName, buildCfg.Main)
+							log.Printf("Building %s for %s/%s arm%s...", binaryBase, goos, goarch, goarm)
+							cmd := exec.Command("go", args...)
+							cmd.Env = envs
+							cmd.Stdout = os.Stdout
+							cmd.Stderr = os.Stderr
+							if err := cmd.Run(); err != nil {
+								return fmt.Errorf("build error: %w", err)
+							}
 						}
+					} else {
+						envs := os.Environ()
+						envs = append(envs, "GOOS="+goos, "GOARCH="+goarch)
+						envs = append(envs, buildCfg.Env...)
+						outputName := getOutputFilename(
+							usePlatformSuffix, outDir, binaryBase, currentTag, goos, goarch, "",
+						)
 						args := []string{"build"}
 						args = append(args, buildCfg.Flags...)
 						if len(processedLdflags) > 0 {
 							args = append(args, "-ldflags", strings.Join(processedLdflags, " "))
 						}
 						args = append(args, "-o", outputName, buildCfg.Main)
-						log.Printf("Building %s for %s/%s arm%s...", binaryBase, goos, goarch, goarm)
+						log.Printf("Building %s for %s/%s...", binaryBase, goos, goarch)
 						cmd := exec.Command("go", args...)
 						cmd.Env = envs
 						cmd.Stdout = os.Stdout
@@ -538,32 +582,13 @@ func buildBinaries(cfg *Config) error {
 							return fmt.Errorf("build error: %w", err)
 						}
 					}
-				} else {
-					envs := os.Environ()
-					envs = append(envs, "GOOS="+goos, "GOARCH="+goarch)
-					envs = append(envs, buildCfg.Env...)
-					var outputName string
-					if usePlatformSuffix {
-						outputName = fmt.Sprintf("%s/%s_%s_%s", outDir, binaryBase, goos, goarch)
-					} else {
-						outputName = fmt.Sprintf("%s/%s", outDir, binaryBase)
-					}
-					args := []string{"build"}
-					args = append(args, buildCfg.Flags...)
-					if len(processedLdflags) > 0 {
-						args = append(args, "-ldflags", strings.Join(processedLdflags, " "))
-					}
-					args = append(args, "-o", outputName, buildCfg.Main)
-					log.Printf("Building %s for %s/%s...", binaryBase, goos, goarch)
-					cmd := exec.Command("go", args...)
-					cmd.Env = envs
-					cmd.Stdout = os.Stdout
-					cmd.Stderr = os.Stderr
-					if err := cmd.Run(); err != nil {
-						return fmt.Errorf("build error: %w", err)
-					}
 				}
-			}
+				return nil
+			})
+		}
+
+		if err := eg.Wait(); err != nil {
+			return fmt.Errorf("build error: %w", err)
 		}
 	}
 
@@ -814,38 +839,37 @@ func createArchives(cfg *Config, artifactsDir string) error {
 		return nil
 	}
 
-	// Get current version
-	version := getGitTag()
-
 	// Read all files in artifacts directory
 	files, err := os.ReadDir(artifactsDir)
 	if err != nil {
 		return fmt.Errorf("failed to read artifacts directory: %w", err)
 	}
 
+	eg := errgroup.Group{}
+	eg.SetLimit(runtime.NumCPU())
+
+	log.Printf("Use %d CPU cores for creating archives...\n", runtime.NumCPU())
+
 	// Track which files were archived
 	archivedFiles := make(map[string]bool)
 
-	// Create archives for each file according to configuration
+	// Create archives for each file/directory according to configuration
 	for _, file := range files {
-		if file.IsDir() {
-			continue
-		}
-
-		// Parse filename to get platform information
 		fileName := file.Name()
+
 		parts := strings.Split(fileName, "_")
-		if len(parts) < 3 {
+		if len(parts) < 4 {
 			continue
 		}
 
-		binary := parts[0]
-		os := parts[1]
-		arch := parts[2]
+		binaryName := parts[0]
+		version := parts[1]
+		os := parts[2]
+		arch := parts[3]
 
 		// Template data
 		tmplData := ArchiveTemplateData{
-			Binary:  binary,
+			Binary:  binaryName,
 			Version: version,
 			Os:      os,
 			Arch:    arch,
@@ -854,29 +878,39 @@ func createArchives(cfg *Config, artifactsDir string) error {
 		// For each archive configuration
 		for _, archive := range cfg.Archives {
 			// Create archive name from template
-			tmpl, err := template.New("archive").Parse(archive.NameTemplate)
-			if err != nil {
-				return fmt.Errorf("failed to parse archive name template: %w", err)
-			}
+			archiveName := fileName
+			if archive.NameTemplate != "" {
+				tmpl, err := template.New("archive").Parse(archive.NameTemplate)
+				if err != nil {
+					return fmt.Errorf("failed to parse archive name template: %w", err)
+				}
 
-			var nameBuffer strings.Builder
-			if err := tmpl.Execute(&nameBuffer, tmplData); err != nil {
-				return fmt.Errorf("failed to execute archive name template: %w", err)
+				var nameBuffer strings.Builder
+				if err := tmpl.Execute(&nameBuffer, tmplData); err != nil {
+					return fmt.Errorf("failed to execute archive name template: %w", err)
+				}
+
+				archiveName = nameBuffer.String()
 			}
 
 			// For each archive format
 			for _, format := range archive.Formats {
-				archiveName := nameBuffer.String() + "." + format
-				archivePath := filepath.Join(artifactsDir, archiveName)
+				archiveFileName := archiveName + "." + format
+				archivePath := filepath.Join(artifactsDir, archiveFileName)
+				sourcePath := filepath.Join(artifactsDir, fileName)
 
 				switch format {
 				case "tar.gz":
-					if err := createTarGz(filepath.Join(artifactsDir, fileName), archivePath); err != nil {
-						return fmt.Errorf("failed to create tar.gz archive: %w", err)
-					}
-					// Mark the source file as archived
+					// Mark the source file/directory as archived
 					archivedFiles[fileName] = true
-				// Here you can add support for other archive formats
+
+					eg.Go(func() error {
+						if err := createTarGz(sourcePath, archivePath); err != nil {
+							return fmt.Errorf("failed to create tar.gz archive: %w", err)
+						}
+
+						return nil
+					})
 				default:
 					log.Printf("Unsupported archive format: %s", format)
 				}
@@ -884,25 +918,34 @@ func createArchives(cfg *Config, artifactsDir string) error {
 		}
 	}
 
-	// Remove all source files that were archived
+	if err := eg.Wait(); err != nil {
+		return fmt.Errorf("error creating archives: %w", err)
+	}
+
+	// Remove all source files/directories that were archived
 	for _, file := range files {
-		if file.IsDir() {
-			continue
-		}
 		fileName := file.Name()
 		if archivedFiles[fileName] {
 			filePath := filepath.Join(artifactsDir, fileName)
-			if err := os.Remove(filePath); err != nil {
-				log.Printf("Warning: failed to remove source file %s: %v", filePath, err)
+			if file.IsDir() {
+				if err := os.RemoveAll(filePath); err != nil {
+					log.Printf("Warning: failed to remove source directory %s: %v", filePath, err)
+				}
+			} else {
+				if err := os.Remove(filePath); err != nil {
+					log.Printf("Warning: failed to remove source file %s: %v", filePath, err)
+				}
 			}
 		}
 	}
 
+	log.Printf("All archives created successfully.")
+
 	return nil
 }
 
-// createTarGz creates a tar.gz archive from a file
-func createTarGz(srcFile, destFile string) error {
+// createTarGz creates a tar.gz archive from a file or directory
+func createTarGz(srcPath, destFile string) error {
 	// Create archive file
 	archive, err := os.Create(destFile)
 	if err != nil {
@@ -918,8 +961,26 @@ func createTarGz(srcFile, destFile string) error {
 	tw := tar.NewWriter(gw)
 	defer tw.Close()
 
+	// Check if source is file or directory
+	srcInfo, err := os.Stat(srcPath)
+	if err != nil {
+		return fmt.Errorf("failed to get source info: %w", err)
+	}
+
+	if srcInfo.IsDir() {
+		// Archive directory - use directory name as base
+		dirName := filepath.Base(srcPath)
+		return addDirToTar(tw, srcPath, dirName)
+	} else {
+		// Archive single file
+		return addFileToTar(tw, srcPath, filepath.Base(srcPath))
+	}
+}
+
+// addFileToTar adds a single file to tar archive
+func addFileToTar(tw *tar.Writer, filePath, nameInTar string) error {
 	// Open source file
-	file, err := os.Open(srcFile)
+	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open source file: %w", err)
 	}
@@ -933,7 +994,7 @@ func createTarGz(srcFile, destFile string) error {
 
 	// Create tar header
 	header := &tar.Header{
-		Name:    filepath.Base(srcFile),
+		Name:    nameInTar,
 		Size:    stat.Size(),
 		Mode:    int64(stat.Mode()),
 		ModTime: stat.ModTime(),
@@ -950,6 +1011,44 @@ func createTarGz(srcFile, destFile string) error {
 	}
 
 	return nil
+}
+
+// addDirToTar recursively adds directory contents to tar archive
+func addDirToTar(tw *tar.Writer, dirPath, baseInTar string) error {
+	return filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Calculate relative path for tar
+		relPath, err := filepath.Rel(dirPath, path)
+		if err != nil {
+			return fmt.Errorf("failed to get relative path: %w", err)
+		}
+
+		var nameInTar string
+		if relPath == "." {
+			// This is the root directory itself
+			nameInTar = baseInTar
+		} else {
+			// Combine with base path in tar
+			nameInTar = filepath.Join(baseInTar, relPath)
+		}
+
+		// Handle directories
+		if info.IsDir() {
+			header := &tar.Header{
+				Name:     nameInTar + "/",
+				Mode:     int64(info.Mode()),
+				ModTime:  info.ModTime(),
+				Typeflag: tar.TypeDir,
+			}
+			return tw.WriteHeader(header)
+		}
+
+		// Handle regular files
+		return addFileToTar(tw, path, nameInTar)
+	})
 }
 
 // deployArtifacts executes deployment according to the configuration
