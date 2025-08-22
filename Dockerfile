@@ -1,5 +1,5 @@
 # Dockerfile
-FROM golang:1.24.5 AS builder
+FROM golang:1.25.0 AS builder
 WORKDIR /app
 
 # Define build arguments for version, commit, and date.
@@ -15,7 +15,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${DATE}" -v -o ./bin/gcx ./cmd/gcx
 
-FROM golang:1.24.5
+FROM golang:1.25.0
 
 ENV GOTOOLCHAIN=auto
 ENV GOROOT=/usr/local/go
