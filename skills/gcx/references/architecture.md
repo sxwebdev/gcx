@@ -114,93 +114,93 @@ All commands share `--config, -c` flag (default: `gcx.yaml`).
 
 ### config
 
-| Function/Method           | Purpose                              |
-| ------------------------- | ------------------------------------ |
-| `Load(path)`              | Read and parse YAML config file      |
-| `Config.Validate()`       | Validate entire config tree          |
-| `BuildConfig.Validate()`  | Validate build config                |
-| `BlobConfig.Validate()`   | Validate publish config by provider  |
-| `DeployConfig.Validate()` | Validate deploy config by provider   |
-| `ArchiveConfig.Validate()`| Validate archive formats             |
+| Function/Method            | Purpose                             |
+| -------------------------- | ----------------------------------- |
+| `Load(path)`               | Read and parse YAML config file     |
+| `Config.Validate()`        | Validate entire config tree         |
+| `BuildConfig.Validate()`   | Validate build config               |
+| `BlobConfig.Validate()`    | Validate publish config by provider |
+| `DeployConfig.Validate()`  | Validate deploy config by provider  |
+| `ArchiveConfig.Validate()` | Validate archive formats            |
 
 ### build
 
-| Function/Type          | Purpose                                                             |
-| ---------------------- | ------------------------------------------------------------------- |
-| `Run(ctx, cfg)`        | Main orchestrator: hooks → clean → parallel compile → archive       |
-| `Artifact`             | Structured metadata: BinaryName, Version, OS, Arch, Arm, DirPath   |
-| `ArchiveTemplateData`  | Template data for archive naming                                    |
+| Function/Type         | Purpose                                                          |
+| --------------------- | ---------------------------------------------------------------- |
+| `Run(ctx, cfg)`       | Main orchestrator: hooks → clean → parallel compile → archive    |
+| `Artifact`            | Structured metadata: BinaryName, Version, OS, Arch, Arm, DirPath |
+| `ArchiveTemplateData` | Template data for archive naming                                 |
 
 ### archive
 
-| Type/Function     | Purpose                         |
-| ----------------- | ------------------------------- |
-| `Archiver`        | Interface: Archive(), Extension() |
-| `New(format)`     | Factory: "tar.gz" or "zip"     |
-| `TarGz`           | tar.gz archiver                 |
-| `Zip`             | zip archiver                    |
+| Type/Function | Purpose                           |
+| ------------- | --------------------------------- |
+| `Archiver`    | Interface: Archive(), Extension() |
+| `New(format)` | Factory: "tar.gz" or "zip"        |
+| `TarGz`       | tar.gz archiver                   |
+| `Zip`         | zip archiver                      |
 
 ### publish
 
-| Type/Function            | Purpose                                  |
-| ------------------------ | ---------------------------------------- |
-| `Publisher`              | Interface: Name(), Publish(ctx, dir, v)  |
-| `NewPublisher(cfg)`      | Factory from BlobConfig                  |
-| `Run(ctx, cfg, name)`    | Orchestrate publishing                   |
-| `S3Publisher`            | S3/S3-compatible upload via minio        |
-| `SSHPublisher`           | SFTP upload via goph                     |
+| Type/Function         | Purpose                                 |
+| --------------------- | --------------------------------------- |
+| `Publisher`           | Interface: Name(), Publish(ctx, dir, v) |
+| `NewPublisher(cfg)`   | Factory from BlobConfig                 |
+| `Run(ctx, cfg, name)` | Orchestrate publishing                  |
+| `S3Publisher`         | S3/S3-compatible upload via minio       |
+| `SSHPublisher`        | SFTP upload via goph                    |
 
 ### deploy
 
-| Type/Function            | Purpose                                  |
-| ------------------------ | ---------------------------------------- |
-| `Deployer`               | Interface: Name(), Deploy(ctx)           |
-| `NewDeployer(cfg)`        | Factory from DeployConfig                |
-| `Run(ctx, cfg, name)`    | Orchestrate deployment with alerts       |
-| `SSHDeployer`            | SSH command execution                    |
+| Type/Function         | Purpose                            |
+| --------------------- | ---------------------------------- |
+| `Deployer`            | Interface: Name(), Deploy(ctx)     |
+| `NewDeployer(cfg)`    | Factory from DeployConfig          |
+| `Run(ctx, cfg, name)` | Orchestrate deployment with alerts |
+| `SSHDeployer`         | SSH command execution              |
 
 ### notify
 
-| Function           | Purpose                                |
-| ------------------ | -------------------------------------- |
+| Function           | Purpose                                      |
+| ------------------ | -------------------------------------------- |
 | `Send(urls, data)` | Send alert via shoutrrr (filters nil errors) |
-| `AlertData`        | AppName, Version, Status, Error        |
+| `AlertData`        | AppName, Version, Status, Error              |
 
 ### git
 
-| Function                  | Purpose                                  |
-| ------------------------- | ---------------------------------------- |
-| `GetTag(ctx)`             | Current tag via `git describe`           |
-| `GetPreviousTag(ctx)`     | Previous tag for changelog               |
-| `GetPreviousStableTag(ctx)` | Previous stable tag (vX.Y.Z pattern)   |
-| `GetChangelog(ctx, from, to)` | Markdown changelog between tags       |
-| `GetCommitHash(ctx)`      | Short commit hash                        |
+| Function                      | Purpose                              |
+| ----------------------------- | ------------------------------------ |
+| `GetTag(ctx)`                 | Current tag via `git describe`       |
+| `GetPreviousTag(ctx)`         | Previous tag for changelog           |
+| `GetPreviousStableTag(ctx)`   | Previous stable tag (vX.Y.Z pattern) |
+| `GetChangelog(ctx, from, to)` | Markdown changelog between tags      |
+| `GetCommitHash(ctx)`          | Short commit hash                    |
 
 ### sshutil
 
-| Function/Type      | Purpose                                      |
-| ------------------ | -------------------------------------------- |
-| `ClientConfig`     | SSH connection params with Validate()        |
-| `NewClient(cfg)`   | Create goph.Client (shared by publish/deploy)|
-| `EnsureKnownHost(server)` | Verify/create known_hosts entry       |
+| Function/Type             | Purpose                                       |
+| ------------------------- | --------------------------------------------- |
+| `ClientConfig`            | SSH connection params with Validate()         |
+| `NewClient(cfg)`          | Create goph.Client (shared by publish/deploy) |
+| `EnsureKnownHost(server)` | Verify/create known_hosts entry               |
 
 ### tmpl
 
-| Function              | Purpose                          |
-| --------------------- | -------------------------------- |
-| `Process(name, t, d)` | Parse and execute text/template  |
+| Function              | Purpose                         |
+| --------------------- | ------------------------------- |
+| `Process(name, t, d)` | Parse and execute text/template |
 
 ### hook
 
-| Function          | Purpose                              |
-| ----------------- | ------------------------------------ |
+| Function          | Purpose                                |
+| ----------------- | -------------------------------------- |
 | `Run(ctx, hooks)` | Execute hooks via `sh -c` with context |
 
 ### shellutil
 
-| Function    | Purpose                              |
-| ----------- | ------------------------------------ |
-| `Quote(s)`  | Shell-safe single-quote escaping     |
+| Function   | Purpose                          |
+| ---------- | -------------------------------- |
+| `Quote(s)` | Shell-safe single-quote escaping |
 
 ## Data Flow
 

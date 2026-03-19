@@ -35,9 +35,9 @@
 
 **Go struct:** `HooksConfig`
 
-| YAML Key | Type       | Description                                                                   |
-| -------- | ---------- | ----------------------------------------------------------------------------- |
-| `hooks`  | `[]string` | Shell commands executed sequentially via `sh -c`. Failure stops execution.    |
+| YAML Key | Type       | Description                                                                |
+| -------- | ---------- | -------------------------------------------------------------------------- |
+| `hooks`  | `[]string` | Shell commands executed sequentially via `sh -c`. Failure stops execution. |
 
 Hooks support full shell syntax: quoted arguments, pipes, redirections, `&&`/`||`.
 
@@ -69,10 +69,10 @@ Hooks support full shell syntax: quoted arguments, pipes, redirections, `&&`/`||
 
 **Go struct:** `ArchiveConfig`
 
-| YAML Key        | Type       | Default | Description                       |
-| --------------- | ---------- | ------- | --------------------------------- |
-| `formats`       | `[]string` | —       | Archive formats: `tar.gz`, `zip`  |
-| `name_template` | `string`   | —       | Template for archive file name    |
+| YAML Key        | Type       | Default | Description                      |
+| --------------- | ---------- | ------- | -------------------------------- |
+| `formats`       | `[]string` | —       | Archive formats: `tar.gz`, `zip` |
+| `name_template` | `string`   | —       | Template for archive file name   |
 
 **Validation:** Only `tar.gz` and `zip` formats are supported.
 
@@ -103,11 +103,11 @@ This is a union struct — fields are provider-specific. Set `provider` to selec
 
 ### S3 provider fields
 
-| YAML Key   | Type     | Description                                  |
-| ---------- | -------- | -------------------------------------------- |
-| `bucket`   | `string` | S3 bucket name (required)                    |
-| `region`   | `string` | AWS region                                   |
-| `endpoint` | `string` | S3 endpoint URL (required)                   |
+| YAML Key   | Type     | Description                |
+| ---------- | -------- | -------------------------- |
+| `bucket`   | `string` | S3 bucket name (required)  |
+| `region`   | `string` | AWS region                 |
+| `endpoint` | `string` | S3 endpoint URL (required) |
 
 **Required env vars:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
 

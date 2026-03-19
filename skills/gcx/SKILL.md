@@ -87,6 +87,7 @@ result, err := tmpl.Process("name", templateStr, data)
 ```
 
 Template data for builds:
+
 - `{{.Version}}` — git tag
 - `{{.Commit}}` — short commit hash
 - `{{.Date}}` — RFC3339 build timestamp
