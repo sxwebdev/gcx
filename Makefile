@@ -4,6 +4,15 @@ build:
 install:
 	go install ./cmd/gcx
 
+test:
+	go test -v ./...
+
+fmt:
+	gofumpt -l -w .
+
+lint:
+	golangci-lint run
+
 docker-build:
 	docker build \
 		--build-arg VERSION=`git describe --tags --abbrev=0 || echo "0.0.0"` \

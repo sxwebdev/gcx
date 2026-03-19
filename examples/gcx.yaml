@@ -1,5 +1,5 @@
-version: 1
 out_dir: "dist"
+concurrency: 4
 
 # Hooks executed before build
 before:
@@ -32,20 +32,24 @@ builds:
 archives:
   - formats: ["tar.gz"]
     name_template: "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - formats: ["zip"]
+    name_template: "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 # Artifact publishing configuration
 blobs:
   - provider: s3
+    name: "aws-releases"
     bucket: "my-releases"
-    directory: "{{.ProjectID}}/{{.Version}}"
+    directory: "releases/{{.Version}}"
     region: "us-east-1"
     endpoint: "https://s3.amazonaws.com"
 
   - provider: ssh
+    name: "ssh-storage"
     server: "storage.example.com"
     user: "deployer"
     key_path: "~/.ssh/deploy_key"
-    directory: "/var/www/releases/{{.ProjectID}}/{{.Version}}"
+    directory: "/var/www/releases/{{.Version}}"
 
 # Deploy configuration
 deploys:
