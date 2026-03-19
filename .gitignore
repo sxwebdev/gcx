@@ -47,8 +47,8 @@ config.yaml
 Dockerfile-dev
 dev.Dockerfile
 node_modules
-build
-.build
+/build
+/.build
 dist
 
 go.work
