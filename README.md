@@ -14,6 +14,16 @@
 - 🚢 **Deployment:** Deploy your artifacts to servers via SSH with custom commands.
 - 🔔 **Notifications:** Send deployment status alerts to multiple channels (Telegram, Slack, Discord, Teams) using Shoutrrr.
 
+## AI Agent Skills
+
+This repository includes [AI agent skills](https://github.com/sxwebdev/skills) with documentation and usage examples for all packages. Install them with the [skills](https://github.com/sxwebdev/skills) CLI:
+
+```bash
+go install github.com/sxwebdev/skills/cmd/skills@latest
+skills init
+skills repo add sxwebdev/gcx
+```
+
 ## Installation
 
 You can download the pre-built binary from the [releases](https://github.com/sxwebdev/gcx/releases) page or build it from source:
